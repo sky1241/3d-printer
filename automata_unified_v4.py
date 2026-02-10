@@ -3735,7 +3735,8 @@ class MotionPrimitive:
     def to_cam_segment(self):
         if self.kind == "PAUSE":
             return {"type": "dwell", "beta_deg": self.beta, "height": 0.0}
-        elif self.kind == "LIFT":
+        elif self.kind in ("LIFT", "SLIDE"):
+            # SLIDE is identical to LIFT at the cam level — difference is follower orientation
             return {"type": "rise" if self.direction > 0 else "return",
                     "beta_deg": self.beta, "height": self.amplitude, "law": self.law.value}
         elif self.kind in ("ROTATE", "NOD"):
@@ -3756,6 +3757,8 @@ class MotionTrack:
     name: str; joint_type: str = "revolute"; axis: str = "x"
     primitives: List[MotionPrimitive] = field(default_factory=list)
     phase_offset_deg: float = 0.0; frequency_multiplier: int = 1
+    follower_direction: str = "vertical"   # V2: "horizontal" for slide
+    lever_length_mm: float = 0.0           # V4: >0 activates lever mode
 
     @property
     def total_beta(self):
@@ -4049,6 +4052,203 @@ def create_swimming_fish(style=MotionStyle.FLUID):
     return scene
 
 
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║  BRIQUE C — Mouvements V2-V10 (macros + templates)              ║
+# ╚══════════════════════════════════════════════════════════════════╝
+
+# ── Macro expansion functions ──
+# These return lists of basic MotionPrimitives (LIFT/PAUSE/WAVE)
+# so CamProfile doesn't need any changes.
+
+def expand_geneva_primitives(n_positions: int = 4, step_lift: float = 20.0,
+                             law: MotionLaw = MotionLaw.CYCLOIDAL) -> List[MotionPrimitive]:
+    """V5 — Geneva drive: N discrete steps with dwell between each.
+    Total = 360°, split into N pulses of (rise + return + dwell)."""
+    beta_per_pos = 360.0 / n_positions
+    # 40% motion (rise+return), 60% dwell
+    beta_rise = beta_per_pos * 0.2
+    beta_return = beta_per_pos * 0.2
+    beta_dwell = beta_per_pos * 0.6
+    prims = []
+    for _ in range(n_positions):
+        prims.append(MotionPrimitive("LIFT", step_lift, beta_rise, law, 1))
+        prims.append(MotionPrimitive("LIFT", step_lift, beta_return, law, -1))
+        prims.append(MotionPrimitive("PAUSE", beta=beta_dwell))
+    return prims
+
+
+def expand_strike_primitives(amplitude: float = 20.0, rise_ratio: float = 0.6,
+                             law: MotionLaw = MotionLaw.CYCLOIDAL) -> List[MotionPrimitive]:
+    """V8 — Strike/impact: slow rise, fast return, pause.
+    rise_ratio controls asymmetry (0.6 = 60% of motion is the slow rise)."""
+    beta_motion = 280.0  # total motion degrees
+    beta_rise = beta_motion * rise_ratio
+    beta_return = beta_motion * (1.0 - rise_ratio)
+    beta_pause = 360.0 - beta_motion
+    return [
+        MotionPrimitive("LIFT", amplitude, beta_rise, law, 1),
+        MotionPrimitive("LIFT", amplitude, beta_return, law, -1),
+        MotionPrimitive("PAUSE", beta=beta_pause),
+    ]
+
+
+def expand_hold_primitives(amplitude: float = 15.0, hold_deg: float = 200.0,
+                           law: MotionLaw = MotionLaw.CYCLOIDAL) -> List[MotionPrimitive]:
+    """V9 — Hold/lock: rise, hold position for hold_deg, return, rest.
+    The follower stays UP for >180° of cam rotation."""
+    beta_rise = 50.0
+    beta_return = 50.0
+    beta_rest = 360.0 - beta_rise - hold_deg - beta_return
+    if beta_rest < 10.0:
+        hold_deg = 360.0 - beta_rise - beta_return - 10.0
+        beta_rest = 10.0
+    return [
+        MotionPrimitive("LIFT", amplitude, beta_rise, law, 1),
+        MotionPrimitive("PAUSE", beta=hold_deg),
+        MotionPrimitive("LIFT", amplitude, beta_return, law, -1),
+        MotionPrimitive("PAUSE", beta=beta_rest),
+    ]
+
+
+def create_sequential_tracks(track_configs: List[dict],
+                             dwell_between_deg: float = 30.0,
+                             law: MotionLaw = MotionLaw.CYCLOIDAL) -> List[MotionTrack]:
+    """V7 — Sequence: auto-phase tracks so movements don't overlap.
+    track_configs = [{'name': 'arm', 'amplitude': 20, 'beta_motion': 120}, ...]
+    Returns tracks with calculated phase_offset_deg."""
+    tracks = []
+    current_phase = 0.0
+    for tc in track_configs:
+        name = tc.get('name', f'seq_{len(tracks)}')
+        amp = tc.get('amplitude', 20.0)
+        beta_m = tc.get('beta_motion', 120.0)
+        beta_rest = 360.0 - beta_m
+        prims = [
+            MotionPrimitive("LIFT", amp, beta_m / 2, law, 1),
+            MotionPrimitive("LIFT", amp, beta_m / 2, law, -1),
+            MotionPrimitive("PAUSE", beta=beta_rest),
+        ]
+        tracks.append(MotionTrack(name, phase_offset_deg=current_phase, primitives=prims))
+        current_phase += beta_m + dwell_between_deg
+    return tracks
+
+
+# ── Scene templates for new movements ──
+
+def create_slide_scene(style=MotionStyle.MECHANICAL):
+    """V2 — Horizontal slide (drawer/translation)."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Slider", description="Glissière horizontale",
+                          style=style, cycle_rpm=2.0)
+    scene.links = [Link("body", 40, 20, 15, 8), Link("slider", 25, 15, 5, 3)]
+    scene.joints = [
+        Joint("slide_joint", "prismatic", (0,1,0), (0,0,20), "body", "slider", (-15, 15))]
+    scene.tracks = [MotionTrack("slide_joint", primitives=[
+        MotionPrimitive("SLIDE", 15, 150, law, 1),
+        MotionPrimitive("PAUSE", beta=60),
+        MotionPrimitive("SLIDE", 15, 120, law, -1),
+        MotionPrimitive("PAUSE", beta=30)],
+        follower_direction="horizontal")]
+    return scene
+
+
+def create_rotate_scene(style=MotionStyle.FLUID):
+    """V4 — Oscillating lever (±30° via cam + lever arm)."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Rocker", description="Levier oscillant ±30°",
+                          style=style, cycle_rpm=1.5)
+    scene.links = [Link("body", 40, 20, 15, 8), Link("lever", 30, 8, 5, 4)]
+    # lever_length 20mm: 30° = 0.524 rad → lift = 0.524 * 20 = 10.5mm
+    lever_mm = 20.0
+    lift_mm = float(np.radians(30.0) * lever_mm)
+    scene.joints = [
+        Joint("lever_joint", "revolute", (1,0,0), (0,0,25), "body", "lever", (-30, 30))]
+    scene.tracks = [MotionTrack("lever_joint", lever_length_mm=lever_mm, primitives=[
+        MotionPrimitive("LIFT", lift_mm, 160, law, 1),
+        MotionPrimitive("LIFT", lift_mm, 140, law, -1),
+        MotionPrimitive("PAUSE", beta=60)])]
+    return scene
+
+
+def create_geneva_scene(style=MotionStyle.MECHANICAL):
+    """V5 — Geneva/turntable: 4 discrete 90° steps per revolution."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Turntable", description="Plateau tournant 4 positions",
+                          style=style, cycle_rpm=1.0)
+    scene.links = [Link("body", 50, 50, 10, 15), Link("platform", 40, 40, 5, 8)]
+    scene.joints = [
+        Joint("geneva_joint", "revolute", (0,0,1), (0,0,15), "body", "platform", (-360, 360))]
+    scene.tracks = [MotionTrack("geneva_joint", primitives=expand_geneva_primitives(4, 15, law))]
+    return scene
+
+
+def create_sequence_scene(style=MotionStyle.MECHANICAL):
+    """V7 — Sequential: 3 movements that happen one after another."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Sequence", description="Mouvements séquentiels",
+                          style=style, cycle_rpm=1.5)
+    scene.links = [
+        Link("body", 50, 25, 15, 10),
+        Link("arm_left", 20, 8, 5, 3),
+        Link("arm_right", 20, 8, 5, 3),
+        Link("head", 15, 12, 12, 4)]
+    scene.joints = [
+        Joint("arm_l", "revolute", (1,0,0), (-10,0,30), "body", "arm_left", (-25, 25)),
+        Joint("arm_r", "revolute", (1,0,0), (10,0,30), "body", "arm_right", (-25, 25)),
+        Joint("head_j", "revolute", (1,0,0), (0,0,40), "body", "head", (-15, 15))]
+    tracks = create_sequential_tracks([
+        {'name': 'arm_l', 'amplitude': 20, 'beta_motion': 100},
+        {'name': 'arm_r', 'amplitude': 20, 'beta_motion': 100},
+        {'name': 'head_j', 'amplitude': 12, 'beta_motion': 80},
+    ], dwell_between_deg=20, law=law)
+    scene.tracks = tracks
+    return scene
+
+
+def create_strike_v2_scene(style=MotionStyle.MECHANICAL):
+    """V8 — Asymmetric strike (slow rise, fast return)."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Striker", description="Frappe asymétrique",
+                          style=style, cycle_rpm=2.0)
+    scene.links = [Link("body", 50, 20, 15, 10), Link("hammer", 25, 10, 8, 5)]
+    scene.joints = [
+        Joint("hammer_joint", "revolute", (1,0,0), (0,0,30), "body", "hammer", (-30, 30))]
+    scene.tracks = [MotionTrack("hammer_joint",
+                                primitives=expand_strike_primitives(20, 0.6, law))]
+    return scene
+
+
+def create_hold_scene(style=MotionStyle.FLUID):
+    """V9 — Hold/lock: follower stays up for >180° of cam rotation."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Holder", description="Maintien en position haute",
+                          style=style, cycle_rpm=1.5)
+    scene.links = [Link("body", 40, 20, 15, 8), Link("lid", 25, 20, 3, 4)]
+    scene.joints = [
+        Joint("lid_joint", "revolute", (1,0,0), (0,0,20), "body", "lid", (-5, 20))]
+    scene.tracks = [MotionTrack("lid_joint",
+                                primitives=expand_hold_primitives(15, 200, law))]
+    return scene
+
+
+def create_multi_scene(style=MotionStyle.FLUID):
+    """V10 — Multi-axis: 2 cams drive vertical + horizontal on same object."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="MultiAxis", description="Mouvement bi-axe (V+H)",
+                          style=style, cycle_rpm=1.5)
+    scene.links = [Link("body", 40, 20, 15, 8), Link("platform", 20, 15, 5, 3)]
+    scene.joints = [
+        Joint("vert_joint", "prismatic", (0,0,1), (0,0,20), "body", "platform", (-15, 15)),
+        Joint("horiz_joint", "prismatic", (0,1,0), (0,0,20), "body", "platform", (-10, 10))]
+    scene.tracks = [
+        MotionTrack("vert_joint", primitives=[
+            MotionPrimitive("WAVE", 15, 360, law)]),
+        MotionTrack("horiz_joint", phase_offset_deg=90, primitives=[
+            MotionPrimitive("WAVE", 10, 360, law)],
+            follower_direction="horizontal")]
+    return scene
+
+
 # ── Scene preset registry ──
 SCENE_PRESETS = {
     "nodding_bird": create_nodding_bird,
@@ -4061,6 +4261,14 @@ SCENE_PRESETS = {
     "drummer": create_drummer,
     "blacksmith": create_blacksmith,
     "swimming_fish": create_swimming_fish,
+    # V2-V10 new movements
+    "slider": create_slide_scene,
+    "rocker": create_rotate_scene,
+    "turntable": create_geneva_scene,
+    "sequence": create_sequence_scene,
+    "striker": create_strike_v2_scene,
+    "holder": create_hold_scene,
+    "multi_axis": create_multi_scene,
     # Aliases
     "duck": create_bobbing_duck,
     "horse": create_rocking_horse,
@@ -5136,6 +5344,13 @@ class SceneBuilder:
         'swim': create_swimming_fish,
         'drum': create_drummer,
         'strike': create_blacksmith,
+        # V2-V10 new movements
+        'slide': create_slide_scene,
+        'rotate': create_rotate_scene,
+        'geneva': create_geneva_scene,
+        'sequence': create_sequence_scene,
+        'hold': create_hold_scene,
+        'multi': create_multi_scene,
     }
 
     # Rough template heights (mm) used for scaling
@@ -5149,6 +5364,13 @@ class SceneBuilder:
         'swim': 55.0,
         'drum': 60.0,
         'strike': 60.0,
+        # V2-V10
+        'slide': 50.0,
+        'rotate': 50.0,
+        'geneva': 50.0,
+        'sequence': 60.0,
+        'hold': 45.0,
+        'multi': 50.0,
     }
 
     @staticmethod
@@ -5174,9 +5396,9 @@ class SceneBuilder:
     @staticmethod
     def _auto_style_for(cfg: FigurineConfig) -> MotionStyle:
         mv = (cfg.movement or '').lower()
-        if mv in ('peck', 'strike', 'drum', 'walk'):
+        if mv in ('peck', 'strike', 'drum', 'walk', 'slide', 'geneva', 'sequence'):
             return MotionStyle.MECHANICAL
-        if mv in ('flap', 'swim', 'rock'):
+        if mv in ('flap', 'swim', 'rock', 'rotate', 'hold', 'multi'):
             return MotionStyle.FLUID
         return MotionStyle.FLUID
 
@@ -5385,6 +5607,13 @@ def parse_text_to_figurine_config(user_text: str) -> FigurineConfig:
         'wave': ['salue', 'wave', 'coucou', 'hello', 'bonjour'],
         'rock': ['bascule', 'rock', 'balance', 'oscille'],
         'swim': [],  # handled separately with word boundary
+        # V2-V10 new movements
+        'slide': ['tiroir', 'drawer', 'glissière', 'slide', 'coulisse', 'pousse'],
+        'rotate': ['levier', 'lever', 'balancier', 'pivote', 'pivot'],
+        'geneva': ['plateau tournant', 'carrousel', 'carousel', 'tournant', 'turntable', 'geneva'],
+        'sequence': ['séquentiel', 'sequence', 'un puis', 'enchaîne'],
+        'hold': ['verrou', 'lock', 'maintien', 'hold', 'reste ouvert', 'stay'],
+        'multi': ['multi', 'trajectoire', 'deux axes', 'multi-axe', 'bi-axe'],
     }
     # swim needs word boundary to avoid matching "personnage"
     if re.search(r'\bnage\b|\bswim\b|\bnager\b', t):
