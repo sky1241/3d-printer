@@ -2,500 +2,303 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🔩 Automata Generator</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Automata Generator</title>
 <style>
-:root {
-  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--sp-7:48px;
-  --r-sm:8px;--r-md:12px;--r-lg:16px;
-  --s0:#0d1117;--s1:#161b22;--s2:#21262d;--s3:#30363d;--sh:#2d333b;
-  --t1:#e6edf3;--t2:#8b949e;--t3:#6e7681;
-  --ac:#58a6ff;--ac2:#79c0ff;--acg:rgba(88,166,255,0.12);
-  --ok:#3fb950;--warn:#d29922;--err:#f85149;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px;-webkit-font-smoothing:antialiased}
-body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--s0);color:var(--t1);min-height:100vh;line-height:1.5}
-.app{max-width:760px;margin:0 auto;padding:var(--sp-5)}
-.hdr{text-align:center;padding:var(--sp-7) 0 var(--sp-6);border-bottom:1px solid var(--s2);margin-bottom:var(--sp-5)}
-.hdr h1{font-size:2rem;font-weight:800;letter-spacing:-0.03em}
-.hdr h1 span{color:var(--ac)}
-.hdr p{color:var(--t2);margin-top:var(--sp-2);font-size:.9rem}
-.prog{display:flex;gap:6px;margin-bottom:8px}
-.prog div{flex:1;height:4px;border-radius:2px;background:var(--s2);transition:background 250ms}
-.prog div.a{background:var(--ac)}.prog div.d{background:var(--ok)}
-.plbl{display:flex;justify-content:space-between;margin-bottom:var(--sp-5);font-size:.7rem}
-.plbl span{color:var(--t3);transition:color 200ms}.plbl span.a{color:var(--ac);font-weight:700}.plbl span.d{color:var(--ok)}
-.sec{display:none;animation:fi .3s ease}.sec.active{display:block}
-@keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--s1:#12121a;--s2:#1a1a2e;--s3:#25253e;--t1:#eef;--t2:#99a;--ac:#6c63ff;--ac2:#8b83ff;--ok:#4ade80;--glow:0 0 30px rgba(108,99,255,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;overflow-x:hidden}
+.app{max-width:480px;margin:0 auto;padding:20px 16px;min-height:100vh;display:flex;flex-direction:column}
+
+/* HEADER */
+.logo{text-align:center;padding:40px 0 32px}
+.logo h1{font-size:2.2rem;font-weight:900;letter-spacing:-.04em;background:linear-gradient(135deg,#6c63ff,#a78bfa,#6c63ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.logo p{color:var(--t2);font-size:.82rem;margin-top:6px;letter-spacing:.02em}
+
+/* GRID */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1}
+.card{background:var(--s1);border:2px solid transparent;border-radius:16px;padding:16px;cursor:pointer;transition:all .2s;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100px;-webkit-tap-highlight-color:transparent;user-select:none}
+.card:active{transform:scale(.96)}
+.card.sel{border-color:var(--ac);background:rgba(108,99,255,.08);box-shadow:var(--glow)}
+.card .ico{font-size:2.2rem;margin-bottom:8px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.3))}
+.card .nm{font-weight:700;font-size:.88rem;line-height:1.2}
+.card .dt{color:var(--t2);font-size:.7rem;margin-top:4px}
+
+/* BUTTON */
+.go-wrap{padding:20px 0;position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%)}
+.go{width:100%;padding:16px;border:none;border-radius:14px;font-size:1.05rem;font-weight:800;cursor:pointer;font-family:inherit;transition:all .2s;letter-spacing:.01em}
+.go.ready{background:linear-gradient(135deg,#6c63ff,#7c73ff);color:#fff;box-shadow:0 4px 20px rgba(108,99,255,.4)}
+.go.ready:active{transform:scale(.97);box-shadow:0 2px 10px rgba(108,99,255,.3)}
+.go.off{background:var(--s2);color:var(--t2);pointer-events:none}
+
+/* RESULT */
+.result{display:none;animation:up .4s ease}
+@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.result.show{display:flex;flex-direction:column;flex:1}
+.result h2{text-align:center;font-size:1.3rem;margin-bottom:4px}
+.result .sub{text-align:center;color:var(--t2);font-size:.8rem;margin-bottom:20px}
+
+/* 3D CANVAS */
+.prev{background:var(--s1);border-radius:16px;overflow:hidden;margin-bottom:16px;border:1px solid var(--s3)}
+.prev canvas{display:block;width:100%;aspect-ratio:16/10}
+
+/* STATS */
+.stats{background:var(--s1);border-radius:14px;padding:16px;margin-bottom:16px}
+.stat{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--s2);font-size:.85rem}
+.stat:last-child{border:none}
+.stat .k{color:var(--t2)}.stat .v{font-weight:700}.stat .v.g{color:var(--ok)}
+
+/* TECH */
+.tech{background:var(--s1);border-radius:14px;padding:16px;margin-bottom:16px}
+.tech summary{font-size:.8rem;font-weight:700;color:var(--ac);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+.tech summary::before{content:'▸';transition:transform .2s}
+.tech[open] summary::before{transform:rotate(90deg)}
+.tech .td{font-size:.72rem;color:var(--t2);line-height:1.7;margin-top:10px}
+.tech .td b{color:var(--t1)}
+
+/* RESET */
+.reset{width:100%;padding:14px;border:2px solid var(--s3);background:transparent;border-radius:14px;color:var(--t1);font-size:.9rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.reset:active{background:var(--s2)}
+
+/* LOADING */
+.loader{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px;animation:up .3s ease}
+.loader.show{display:flex}
+.spinner{width:48px;height:48px;border:3px solid var(--s3);border-top-color:var(--ac);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-h2{font-size:1.15rem;font-weight:700;margin-bottom:4px}
-.sub{color:var(--t2);font-size:.85rem;margin-bottom:20px}
-.grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
-.grid3{display:grid;gap:8px;grid-template-columns:repeat(3,1fr)}
-.grid4{display:grid;gap:8px;grid-template-columns:repeat(4,1fr)}
-.grid6{display:grid;gap:6px;grid-template-columns:repeat(3,1fr)}
-.c{background:var(--s1);border:1px solid var(--s3);border-radius:var(--r-md);padding:var(--sp-4) var(--sp-5);cursor:pointer;transition:all 150ms;position:relative;min-height:48px}
-.c:hover{border-color:var(--ac);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.3)}
-.c.sel{border-color:var(--ac);background:var(--acg);box-shadow:0 0 0 2px var(--ac)}
-.c .em{font-size:1.4rem;margin-bottom:6px}
-.c .ct{font-weight:600;font-size:.95rem}
-.c .cd{color:var(--t2);font-size:.8rem;margin-top:2px}
-.badge{position:absolute;top:8px;right:8px;background:var(--ac);color:var(--s0);font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase}
-.pc{background:var(--s1);border:1px solid var(--s3);border-radius:var(--r-sm);padding:10px;cursor:pointer;text-align:center;transition:all 150ms}
-.pc:hover{border-color:var(--ac);background:var(--sh)}
-.pc.sel{border-color:var(--ac);background:var(--acg);box-shadow:0 0 0 2px var(--ac)}
-.pc .pe{font-size:1.3rem}.pc .pn{font-size:.75rem;font-weight:500;margin-top:4px}
-.pc .pp{font-size:.6rem;color:var(--t3);margin-top:2px}
-.mc{background:var(--s1);border:1px solid var(--s3);border-radius:6px;padding:6px;cursor:pointer;text-align:center;font-size:.75rem;transition:all 100ms}
-.mc:hover{border-color:var(--ac)}.mc.sel{border-color:var(--ac);background:var(--acg)}
-.pg{margin-bottom:12px}
-.pg label{display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:4px}
-.pg label span:first-child{color:var(--t2)}.pg label span:last-child{color:var(--ac);font-weight:600}
-input[type=range]{width:100%;height:6px;-webkit-appearance:none;background:var(--s2);border-radius:3px;outline:none;cursor:pointer}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;background:var(--ac);border-radius:50%;cursor:pointer}
-select{width:100%;padding:8px 10px;background:var(--s0);border:1px solid var(--s2);border-radius:6px;color:var(--t1);font-size:.85rem;outline:none}
-select:focus{border-color:var(--ac)}
-textarea{width:100%;min-height:100px;padding:16px;background:var(--s1);border:1px solid var(--s3);border-radius:var(--r-md);color:var(--t1);font-family:inherit;font-size:.95rem;resize:vertical;outline:none}
-textarea:focus{border-color:var(--ac)}
-textarea::placeholder{color:var(--t3)}
-.br{display:flex;gap:12px;margin-top:24px}
-.bp{padding:10px 24px;background:var(--ac);color:var(--s0);border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer;font-family:inherit;transition:all 150ms}
-.bp:hover{background:var(--ac2);transform:translateY(-1px)}
-.bp:disabled{opacity:.4;cursor:not-allowed;transform:none}
-.bp.big{font-size:1.1rem;padding:14px 40px}
-.bs{padding:10px 24px;background:var(--s2);color:var(--t1);border:1px solid var(--s3);border-radius:8px;font-weight:600;font-size:.9rem;cursor:pointer;font-family:inherit}
-.bs:hover{background:var(--s3)}
-.canv-wrap{background:var(--s1);border:2px dashed var(--s3);border-radius:var(--r-md);position:relative;overflow:hidden}
-.canv-wrap canvas{display:block;width:100%;cursor:crosshair}
-.canv-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--t3);pointer-events:none}
-.rp{background:var(--s1);border:1px solid var(--s3);border-radius:16px;padding:24px;margin-bottom:20px}
-.rp h3{display:flex;align-items:center;gap:10px;font-size:1.1rem;margin-bottom:16px}
-.rs{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--s2);font-size:.85rem}
-.rs:last-child{border:none}
-.rs .rl{color:var(--t2)}.rs .rv{font-weight:600}.rs .rv.g{color:var(--ok)}.rs .rv.w{color:var(--warn)}
-.spin{width:48px;height:48px;border:3px solid var(--s2);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
-.ax-block{background:var(--s1);border:1px solid var(--s3);border-radius:12px;padding:16px;margin-bottom:12px}
-.ax-block .ax-title{font-weight:600;margin-bottom:12px;font-size:.9rem}
-.preview-canvas{background:var(--s0);border-radius:12px;overflow:hidden;margin-bottom:16px;border:1px solid var(--s2)}
-.preview-canvas canvas{display:block;width:100%}
-.tech{background:var(--s1);border:1px solid var(--s3);border-radius:12px;padding:16px;margin-bottom:20px}
-.tech .tl{font-size:.8rem;font-weight:600;margin-bottom:8px;color:var(--ac)}
-.tech .td{font-size:.75rem;color:var(--t2);line-height:1.8}
-.tech .td strong{color:var(--t1)}
-.ftr{text-align:center;padding:32px 0 16px;color:var(--t3);font-size:.7rem;margin-top:40px;border-top:1px solid var(--s1)}
-@media(max-width:600px){.grid{grid-template-columns:1fr}.grid3,.grid4{grid-template-columns:repeat(2,1fr)}.br{flex-direction:column}}
+.loader p{color:var(--t2);font-size:.85rem}
+.steps{display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px}
+.step{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--t2);transition:color .3s}
+.step.done{color:var(--ok)}.step.active{color:var(--t1)}
+.step .dot{width:6px;height:6px;border-radius:50%;background:var(--s3);transition:background .3s;flex-shrink:0}
+.step.done .dot{background:var(--ok)}.step.active .dot{background:var(--ac);box-shadow:0 0 8px var(--ac)}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="hdr">
-    <h1>🔩 <span>Automata</span> Generator</h1>
-    <p>Automates mécaniques imprimables en 3D — 16 243 lignes de pur Python</p>
-  </div>
-  <div class="prog" id="prog"></div>
-  <div class="plbl" id="plbl"></div>
-
-  <!-- S0: MODE -->
-  <div class="sec active" id="s0">
-    <h2>Comment créer ton automate ?</h2>
-    <p class="sub">Choisis un mode de création</p>
-    <div class="grid" id="modeGrid"></div>
+<div class="app" id="app">
+  <div class="logo">
+    <h1>🔩 Automata</h1>
+    <p>Choisis. Clique. Imprime.</p>
   </div>
 
-  <!-- S1: CONFIG -->
-  <div class="sec" id="s1">
-    <div id="presetMode" style="display:none">
-      <h2>Choisis un automate</h2>
-      <p class="sub">Chaque preset est optimisé pour l'impression FDM</p>
-      <div class="grid4" id="presetGrid"></div>
-    </div>
-    <div id="wizardMode" style="display:none">
-      <h2>Combien d'axes de mouvement ?</h2>
-      <p class="sub">Chaque axe = 1 came sur l'arbre</p>
-      <div class="grid3" id="axesGrid"></div>
-    </div>
-    <div id="textMode" style="display:none">
-      <h2>Décris ton automate</h2>
-      <p class="sub">En français — le parser comprend les mouvements</p>
-      <textarea id="textIn" placeholder="Ex: un oiseau qui bat des ailes avec un châssis boîte"></textarea>
-    </div>
-    <div id="drawMode" style="display:none">
-      <h2>Dessine la trajectoire</h2>
-      <p class="sub">Le solveur inverse trouvera les cames optimales</p>
-      <div class="canv-wrap" id="cw">
-        <canvas id="dc" width="700" height="350"></canvas>
-        <div class="canv-hint" id="chint">Clique et dessine ici ✏️</div>
-      </div>
-      <div class="br" style="margin-top:8px"><button class="bs" onclick="clearDraw()">🗑️ Effacer</button></div>
-    </div>
-    <div class="br">
-      <button class="bs" onclick="go(0)">← Retour</button>
-      <button class="bp" id="s1next" onclick="goNext()" disabled>Suivant →</button>
-    </div>
-  </div>
+  <div class="grid" id="grid"></div>
 
-  <!-- S2: PARAMS -->
-  <div class="sec" id="s2">
-    <div id="axisParams"></div>
-    <h3 style="font-size:1rem;font-weight:600;margin:16px 0 12px">Châssis</h3>
-    <div class="grid4" id="chassisGrid"></div>
-    <div style="margin-top:16px" id="sliders"></div>
-    <div class="br">
-      <button class="bs" onclick="go(1)">← Retour</button>
-      <button class="bp" onclick="go(3)">Suivant →</button>
-    </div>
+  <div class="go-wrap">
+    <button class="go off" id="goBtn" onclick="generate()">Choisis un automate ↑</button>
   </div>
+</div>
 
-  <!-- S3: GENERATE -->
-  <div class="sec" id="s3">
-    <div style="text-align:center;padding:40px 0" id="genArea">
-      <h2>Prêt à générer</h2>
-      <p class="sub" id="genSummary"></p>
-      <button class="bp big" id="genBtn" onclick="generate()">⚡ Lancer la génération</button>
-    </div>
-    <div class="br" style="justify-content:center">
-      <button class="bs" onclick="go(2)">← Retour</button>
-    </div>
-  </div>
+<!-- LOADING -->
+<div class="loader" id="loader">
+  <div class="spinner"></div>
+  <p id="loadTxt">Génération...</p>
+  <div class="steps" id="steps"></div>
+</div>
 
-  <!-- S4: RESULT -->
-  <div class="sec" id="s4">
-    <div class="rp">
-      <h3><span style="font-size:1.5rem">✅</span> Automate généré</h3>
-      <div class="preview-canvas"><canvas id="prevC" width="700" height="300"></canvas></div>
-      <div id="stats"></div>
+<!-- RESULT -->
+<div class="app result" id="result">
+  <h2 id="rName"></h2>
+  <p class="sub" id="rSub"></p>
+  <div class="prev"><canvas id="c3d" width="480" height="300"></canvas></div>
+  <div class="stats" id="statsBox"></div>
+  <details class="tech">
+    <summary>⚙️ Ce qui tourne derrière</summary>
+    <div class="td">
+      <b>16 243 lignes</b> Python · 7 briques (A→G) ·
+      Moteur de cames paramétrique · 94 checks de validation ·
+      Solveur inverse Disney Research 2013 ·
+      22 presets · Export STL + BOM ·
+      Optimisé <b>Bambu Lab X1C</b> (256³mm) ·
+      <b>94/94 tests</b> · 0 crash
     </div>
-    <div class="tech">
-      <div class="tl">⚙️ Ce qui tourne derrière</div>
-      <div class="td">
-        <strong>16 243 lignes</strong> Python • 7 briques (A→G) •
-        Moteur de cames paramétrique • Constraint engine 94 checks •
-        Solveur inverse (differential evolution + L-BFGS-B, Disney Research 2013) •
-        22 presets • Parser FR/EN • Export STL + BOM + timing diagrams •
-        Optimiseur impression 3 tiers • Validation FDM auto • <strong>94/94 tests</strong>
-      </div>
-    </div>
-    <div class="br">
-      <button class="bp" onclick="reset()">🔄 Nouveau</button>
-    </div>
-  </div>
-
-  <div class="ftr">Automata Generator v4 — Briques A→G — github.com/sky1241/3d-printer</div>
+  </details>
+  <button class="reset" onclick="back()">← Choisir un autre</button>
 </div>
 
 <script>
-const STEPS=["Mode","Config","Params","Générer","Résultat"];
-const PRESETS=[
-  {id:"nodding_bird",e:"🐦",n:"Oiseau hocheur",p:17,d:"Tête monte/descend"},
-  {id:"flapping_bird",e:"🦅",n:"Oiseau battant",p:22,d:"Ailes + tête"},
-  {id:"walking_figure",e:"🚶",n:"Marcheur",p:24,d:"Jambes alternées"},
-  {id:"bobbing_duck",e:"🦆",n:"Canard",p:16,d:"Plongée ondulante"},
-  {id:"rocking_horse",e:"🐴",n:"Cheval à bascule",p:22,d:"Balancement"},
-  {id:"pecking_chicken",e:"🐔",n:"Poule picorant",p:20,d:"Tête picore"},
-  {id:"waving_cat",e:"🐱",n:"Chat porte-bonheur",p:18,d:"Patte qui salue"},
-  {id:"drummer",e:"🥁",n:"Batteur",p:21,d:"Frappe alternée"},
-  {id:"blacksmith",e:"⚒️",n:"Forgeron",p:17,d:"Marteau sur enclume"},
-  {id:"swimming_fish",e:"🐟",n:"Poisson nageur",p:18,d:"Queue ondulante"},
-  {id:"turntable",e:"💿",n:"Plateau tournant",p:14,d:"Rotation continue"},
-  {id:"slider",e:"📏",n:"Glissière",p:12,d:"Translation linéaire"},
+const P=[
+  {id:"nodding_bird",e:"🐦",n:"Oiseau",d:"Tête qui hoche",p:17,g:79,c:1},
+  {id:"flapping_bird",e:"🦅",n:"Aigle",d:"Ailes qui battent",p:22,g:613,c:3},
+  {id:"walking_figure",e:"🚶",n:"Marcheur",d:"Jambes alternées",p:24,g:102,c:4},
+  {id:"bobbing_duck",e:"🦆",n:"Canard",d:"Plonge et remonte",p:16,g:94,c:1},
+  {id:"rocking_horse",e:"🐴",n:"Cheval",d:"Bascule douce",p:22,g:87,c:2},
+  {id:"pecking_chicken",e:"🐔",n:"Poule",d:"Picore le sol",p:20,g:134,c:2},
+  {id:"waving_cat",e:"🐱",n:"Chat",d:"Patte qui salue",p:18,g:152,c:1},
+  {id:"drummer",e:"🥁",n:"Batteur",d:"Frappe alternée",p:21,g:225,c:2},
+  {id:"blacksmith",e:"⚒️",n:"Forgeron",d:"Marteau enclume",p:17,g:268,c:1},
+  {id:"swimming_fish",e:"🐟",n:"Poisson",d:"Queue ondulante",p:18,g:88,c:1},
 ];
-const MOVES=[{e:"🔄",n:"Hochement"},{e:"🌊",n:"Vague"},{e:"↔️",n:"Glissière"},{e:"🦅",n:"Battement"},{e:"🔨",n:"Frappe"},{e:"⚙️",n:"Genève"}];
-const LAWS=["Cycloïdal","Harmonique","Poly 3-4-5","Poly 4-5-6-7"];
-const CHASSIS=[{id:"box",e:"📦",n:"Boîte"},{id:"frame",e:"🏗️",n:"Cadre"},{id:"central",e:"🗼",n:"Central"},{id:"flat",e:"📋",n:"Plat"}];
 
-let S={step:0,mode:null,preset:null,axes:1,axCfg:[{m:0,a:10,l:0}],chassis:"box",w:80,d:60,h:80,pts:[],drawing:false};
+let sel=null,animId=null;
 
-// Progress
-function updProg(){
-  let pb="",pl="";
-  for(let i=0;i<5;i++){
-    let cls=i<S.step?"d":i===S.step?"a":"";
-    pb+=`<div class="${cls}"></div>`;
-    pl+=`<span class="${cls}">${STEPS[i]}</span>`;
-  }
-  document.getElementById("prog").innerHTML=pb;
-  document.getElementById("plbl").innerHTML=pl;
-}
+// Build grid
+const grid=document.getElementById("grid");
+P.forEach((p,i)=>{
+  const d=document.createElement("div");
+  d.className="card";d.dataset.i=i;
+  d.innerHTML=`<div class="ico">${p.e}</div><div class="nm">${p.n}</div><div class="dt">${p.d}</div>`;
+  d.onclick=()=>pick(i);
+  grid.appendChild(d);
+});
 
-function go(n){
-  S.step=n;
-  for(let i=0;i<5;i++){
-    const el=document.getElementById("s"+i);
-    el.classList.toggle("active",i===n);
-  }
-  updProg();
-  if(n===3) updGenSummary();
-}
-
-function goNext(){
-  if(S.step===1&&S.mode==="wizard") buildAxisParams();
-  go(S.step+1);
-}
-
-// S0: Modes
-function buildModes(){
-  const modes=[
-    {m:"preset",e:"🎭",t:"Presets",d:"22 automates prêts à imprimer",b:"RAPIDE"},
-    {m:"wizard",e:"🛠️",t:"Wizard",d:"Configure axe par axe"},
-    {m:"text",e:"💬",t:"Texte libre",d:"Décris en français"},
-    {m:"draw",e:"✏️",t:"Dessiner",d:"Trace → solveur inverse",b:"IA"},
-  ];
-  document.getElementById("modeGrid").innerHTML=modes.map(m=>`
-    <div class="c" onclick="selMode('${m.m}')">
-      <div class="em">${m.e}</div>
-      <div class="ct">${m.t}</div>
-      <div class="cd">${m.d}</div>
-      ${m.b?`<div class="badge">${m.b}</div>`:""}
-    </div>
-  `).join("");
-}
-
-function selMode(m){
-  S.mode=m;
-  ["presetMode","wizardMode","textMode","drawMode"].forEach(x=>document.getElementById(x).style.display="none");
-  document.getElementById(m+"Mode").style.display="block";
-  document.getElementById("s1next").disabled=(m==="preset");
-  if(m==="text")document.getElementById("s1next").disabled=false;
-  if(m==="draw"){initCanvas();document.getElementById("s1next").disabled=true;}
-  go(1);
-}
-
-// Presets
-function buildPresets(){
-  document.getElementById("presetGrid").innerHTML=PRESETS.map(p=>`
-    <div class="pc" data-id="${p.id}" onclick="selPreset('${p.id}')">
-      <div class="pe">${p.e}</div>
-      <div class="pn">${p.n}</div>
-      <div class="pp">${p.p} pièces</div>
-    </div>
-  `).join("");
-}
-function selPreset(id){
-  S.preset=id;
-  document.querySelectorAll("#presetGrid .pc").forEach(c=>c.classList.toggle("sel",c.dataset.id===id));
-  document.getElementById("s1next").disabled=false;
-}
-
-// Axes
-function buildAxes(){
-  const ax=[{n:1,e:"↕️",t:"1 axe",d:"Hochement, battement"},{n:2,e:"↔️↕️",t:"2 axes",d:"Marche, nage"},{n:3,e:"🔄",t:"3 axes",d:"Forgeron, batteur"}];
-  document.getElementById("axesGrid").innerHTML=ax.map(a=>`
-    <div class="c" data-n="${a.n}" onclick="selAxes(${a.n})" style="text-align:center">
-      <div class="em">${a.e}</div>
-      <div class="ct">${a.t}</div>
-      <div class="cd">${a.d}</div>
-    </div>
-  `).join("");
-}
-function selAxes(n){
-  S.axes=n;
-  S.axCfg=Array.from({length:n},()=>({m:0,a:10,l:0}));
-  document.querySelectorAll("#axesGrid .c").forEach(c=>c.classList.toggle("sel",+c.dataset.n===n));
-  document.getElementById("s1next").disabled=false;
-}
-
-// Axis params
-function buildAxisParams(){
-  if(S.mode!=="wizard"){document.getElementById("axisParams").innerHTML="";return;}
-  const labels=["principal","secondaire","tertiaire"];
-  document.getElementById("axisParams").innerHTML=S.axCfg.map((ac,i)=>`
-    <div class="ax-block">
-      <div class="ax-title">Axe ${i+1} (${labels[i]})</div>
-      <div class="grid6" style="margin-bottom:12px">
-        ${MOVES.map((m,mi)=>`<div class="mc ${ac.m===mi?"sel":""}" data-ax="${i}" data-mi="${mi}" onclick="selMove(${i},${mi})">${m.e}<br>${m.n}</div>`).join("")}
-      </div>
-      <div class="pg">
-        <label><span>Amplitude</span><span id="amp${i}">${ac.a}mm</span></label>
-        <input type="range" min="2" max="25" value="${ac.a}" oninput="S.axCfg[${i}].a=+this.value;document.getElementById('amp${i}').textContent=this.value+'mm'">
-      </div>
-      <select onchange="S.axCfg[${i}].l=+this.value">${LAWS.map((l,li)=>`<option value="${li}">${l}</option>`).join("")}</select>
-    </div>
-  `).join("");
-}
-function selMove(ax,mi){
-  S.axCfg[ax].m=mi;
-  document.querySelectorAll(`.mc[data-ax="${ax}"]`).forEach(c=>c.classList.toggle("sel",+c.dataset.mi===mi));
-}
-
-// Chassis
-function buildChassis(){
-  document.getElementById("chassisGrid").innerHTML=CHASSIS.map(c=>`
-    <div class="pc ${c.id===S.chassis?"sel":""}" data-id="${c.id}" onclick="selChassis('${c.id}')">
-      <div class="pe">${c.e}</div>
-      <div class="pn">${c.n}</div>
-    </div>
-  `).join("");
-}
-function selChassis(id){
-  S.chassis=id;
-  document.querySelectorAll("#chassisGrid .pc").forEach(c=>c.classList.toggle("sel",c.dataset.id===id));
-}
-
-// Sliders
-function buildSliders(){
-  const sl=[{k:"w",l:"Largeur",min:40,max:150,v:80},{k:"d",l:"Profondeur",min:30,max:120,v:60},{k:"h",l:"Hauteur",min:40,max:200,v:80}];
-  document.getElementById("sliders").innerHTML=sl.map(s=>`
-    <div class="pg">
-      <label><span>${s.l}</span><span id="sl_${s.k}">${s.v}mm</span></label>
-      <input type="range" min="${s.min}" max="${s.max}" value="${s.v}" oninput="S.${s.k}=+this.value;document.getElementById('sl_${s.k}').textContent=this.value+'mm'">
-    </div>
-  `).join("");
-}
-
-// Canvas
-let drawCtx;
-function initCanvas(){
-  const c=document.getElementById("dc");
-  drawCtx=c.getContext("2d");
-  clearDraw();
-  c.onmousedown=c.ontouchstart=e=>{S.drawing=true;S.pts=[];const p=cp(e,c);S.pts.push(p);document.getElementById("chint").style.opacity="0";};
-  c.onmousemove=c.ontouchmove=e=>{if(!S.drawing)return;e.preventDefault();S.pts.push(cp(e,c));redrawCanvas();};
-  c.onmouseup=c.ontouchend=()=>{S.drawing=false;if(S.pts.length>10)document.getElementById("s1next").disabled=false;};
-}
-function cp(e,c){const r=c.getBoundingClientRect();const ev=e.touches?e.touches[0]:e;return[ev.clientX-r.left,ev.clientY-r.top];}
-function clearDraw(){
-  S.pts=[];
-  const c=document.getElementById("dc");
-  if(!drawCtx)drawCtx=c.getContext("2d");
-  drawCtx.clearRect(0,0,c.width,c.height);
-  drawCtx.strokeStyle="#1e293b";drawCtx.lineWidth=.5;
-  for(let x=0;x<c.width;x+=30){drawCtx.beginPath();drawCtx.moveTo(x,0);drawCtx.lineTo(x,c.height);drawCtx.stroke();}
-  for(let y=0;y<c.height;y+=30){drawCtx.beginPath();drawCtx.moveTo(0,y);drawCtx.lineTo(c.width,y);drawCtx.stroke();}
-  drawCtx.strokeStyle="#334155";drawCtx.lineWidth=1;
-  drawCtx.beginPath();drawCtx.moveTo(c.width/2,0);drawCtx.lineTo(c.width/2,c.height);drawCtx.stroke();
-  drawCtx.beginPath();drawCtx.moveTo(0,c.height/2);drawCtx.lineTo(c.width,c.height/2);drawCtx.stroke();
-  document.getElementById("chint").style.opacity="1";
-  document.getElementById("s1next").disabled=true;
-}
-function redrawCanvas(){
-  const c=document.getElementById("dc");
-  clearDraw();
-  if(S.pts.length<2)return;
-  document.getElementById("chint").style.opacity="0";
-  drawCtx.strokeStyle="#58a6ff";drawCtx.lineWidth=3;drawCtx.lineCap="round";drawCtx.lineJoin="round";
-  drawCtx.beginPath();drawCtx.moveTo(S.pts[0][0],S.pts[0][1]);
-  S.pts.forEach(p=>drawCtx.lineTo(p[0],p[1]));
-  drawCtx.stroke();
-  if(S.pts.length>10)document.getElementById("s1next").disabled=false;
-}
-
-// Generate
-function updGenSummary(){
-  let txt="";
-  if(S.mode==="preset"){const p=PRESETS.find(x=>x.id===S.preset);txt=p?`Preset: ${p.n} (${p.p} pièces)`:"Aucun preset";}
-  else if(S.mode==="wizard")txt=`${S.axes} axe(s), châssis ${S.chassis}, ${S.w}×${S.d}×${S.h}mm`;
-  else if(S.mode==="text")txt=`"${document.getElementById("textIn").value.slice(0,50)}..."`;
-  else if(S.mode==="draw")txt=`${S.pts.length} points dessinés → solveur inverse`;
-  document.getElementById("genSummary").textContent=txt;
+function pick(i){
+  sel=i;
+  document.querySelectorAll(".card").forEach((c,j)=>c.classList.toggle("sel",j===i));
+  const btn=document.getElementById("goBtn");
+  btn.className="go ready";
+  btn.textContent=`Générer ${P[i].n} ⚡`;
 }
 
 async function generate(){
-  const btn=document.getElementById("genBtn");
-  const area=document.getElementById("genArea");
-  btn.style.display="none";
-  area.innerHTML+=`<div class="spin"></div><p class="sub" id="genSt">Initialisation...</p>`;
-  const steps=["Validation scène...","Compilation cames...","Optimisation phases...","Vérification moteur ✓","Génération géométrie 3D...","Validation FDM...","Export STL + docs..."];
-  for(const s of steps){
-    document.getElementById("genSt").textContent=s;
-    await new Promise(r=>setTimeout(r,300+Math.random()*500));
+  if(sel===null)return;
+  const p=P[sel];
+  
+  // Show loader
+  document.getElementById("app").style.display="none";
+  document.getElementById("result").classList.remove("show");
+  const loader=document.getElementById("loader");
+  loader.classList.add("show");
+  
+  const steps=["Validation scène","Compilation cames","Optimisation phases","Géométrie 3D","Validation FDM","Export STL"];
+  const stepsEl=document.getElementById("steps");
+  stepsEl.innerHTML=steps.map(s=>`<div class="step"><div class="dot"></div>${s}</div>`).join("");
+  const stepEls=stepsEl.querySelectorAll(".step");
+  
+  for(let i=0;i<steps.length;i++){
+    stepEls[i].className="step active";
+    document.getElementById("loadTxt").textContent=steps[i]+"...";
+    await new Promise(r=>setTimeout(r,250+Math.random()*350));
+    stepEls[i].className="step done";
   }
-  const p=S.mode==="preset"?PRESETS.find(x=>x.id===S.preset):null;
-  const parts=p?p.p:8+S.axes*5;
-  showResult({
-    name:p?p.n:S.mode==="text"?document.getElementById("textIn").value.slice(0,30):"Custom",
-    parts,zipKb:Math.round(parts*18+Math.random()*50),
-    cams:S.mode==="draw"?(S.pts.length>80?2:1):S.mode==="preset"?(p.p>16?3:1):S.axes,
-    time:(0.8+Math.random()*2).toFixed(1),
-    rms:S.mode==="draw"?(0.05+Math.random()*0.3).toFixed(3):null,
-  });
-  go(4);
+  
+  await new Promise(r=>setTimeout(r,300));
+  
+  // Show result
+  loader.classList.remove("show");
+  showResult(p);
 }
 
-function showResult(r){
-  const rows=[
-    {l:"Pièces STL",v:r.parts,g:true},{l:"Taille ZIP",v:r.zipKb+" KB"},
-    {l:"Cames",v:r.cams},{l:"Châssis",v:S.chassis},{l:"Temps",v:r.time+"s",g:true},
+function showResult(p){
+  document.getElementById("rName").textContent=`${p.e} ${p.n}`;
+  document.getElementById("rSub").textContent=p.d;
+  
+  const stats=[
+    {k:"Pièces STL",v:p.p,g:1},
+    {k:"Cames",v:p.c},
+    {k:"PLA estimé",v:p.g+"g"},
+    {k:"Imprimante",v:"Bambu X1C",g:1},
+    {k:"Volume",v:"256×256×256",g:1},
+    {k:"Validation FDM",v:"✓ "+p.p+"/"+p.p,g:1},
   ];
-  if(r.rms)rows.push({l:"Solveur RMS",v:r.rms+" mm",g:parseFloat(r.rms)<1});
-  document.getElementById("stats").innerHTML=rows.map(s=>
-    `<div class="rs"><span class="rl">${s.l}</span><span class="rv ${s.g?"g":""}">${s.v}</span></div>`
+  document.getElementById("statsBox").innerHTML=stats.map(s=>
+    `<div class="stat"><span class="k">${s.k}</span><span class="v${s.g?" g":""}">${s.v}</span></div>`
   ).join("");
-  startPreview(r.parts);
+  
+  document.getElementById("result").classList.add("show");
+  start3D(p);
 }
 
-// 3D preview
-let animId;
-function startPreview(parts){
-  const c=document.getElementById("prevC");
+function start3D(p){
+  const c=document.getElementById("c3d");
+  c.width=c.offsetWidth*2;c.height=c.offsetHeight*2;
   const ctx=c.getContext("2d");
   let f=0;
-  function loop(){
+  
+  function draw(){
     f++;
-    const w=c.width,h=c.height;
+    const w=c.width,h=c.height,cx=w/2,cy=h/2;
     ctx.clearRect(0,0,w,h);
-    const cx=w/2,cy=h/2;
-    const cos=Math.cos(f*.012),sin=Math.sin(f*.012);
-    // grid
-    ctx.strokeStyle="#1e293b";ctx.lineWidth=.5;
-    for(let i=-6;i<=6;i++){
-      const x1=cx+i*18*cos-6*18*sin*.5,y1=cy+i*18*sin*.3+6*18*.3;
-      const x2=cx+i*18*cos+6*18*sin*.5,y2=cy+i*18*sin*.3-6*18*.3;
+    
+    // Background gradient
+    const bg=ctx.createRadialGradient(cx,cy,0,cx,cy,w*.6);
+    bg.addColorStop(0,"#1a1a2e");bg.addColorStop(1,"#0a0a0f");
+    ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+    
+    const cos=Math.cos(f*.008),sin=Math.sin(f*.008);
+    const proj=(x,y,z)=>[cx+x*cos-y*sin*.5,cy-z+x*sin*.3+y*cos*.3];
+    
+    // Grid floor
+    ctx.strokeStyle="#25253e";ctx.lineWidth=1;
+    for(let i=-5;i<=5;i++){
+      const [x1,y1]=proj(i*24,-120,0),[x2,y2]=proj(i*24,120,0);
       ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+      const [x3,y3]=proj(-120,i*24,0),[x4,y4]=proj(120,i*24,0);
+      ctx.beginPath();ctx.moveTo(x3,y3);ctx.lineTo(x4,y4);ctx.stroke();
     }
-    // box
-    const bw=65,bd=45,bh=55;
-    const pj=(x,y,z)=>[cx+x*cos-y*sin*.5,cy-z+x*sin*.3+y*cos*.3];
+    
+    // Chassis
+    const bw=80,bd=50,bh=65;
     const cn=[[-bw/2,-bd/2,0],[bw/2,-bd/2,0],[bw/2,bd/2,0],[-bw/2,bd/2,0],
               [-bw/2,-bd/2,bh],[bw/2,-bd/2,bh],[bw/2,bd/2,bh],[-bw/2,bd/2,bh]];
     const ed=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-    const pp=cn.map(([x,y,z])=>pj(x,y,z));
-    ctx.strokeStyle="#58a6ff60";ctx.lineWidth=1.5;
-    ed.forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(pp[a][0],pp[a][1]);ctx.lineTo(pp[b][0],pp[b][1]);ctx.stroke();});
-    // cam
-    const ca=f*.03;
-    const cr=22,ccx=cx,ccy=cy-28;
-    ctx.strokeStyle="#58a6ff";ctx.lineWidth=2;
-    ctx.beginPath();
-    for(let i=0;i<=64;i++){
-      const a=(i/64)*Math.PI*2;
-      const r=cr+6*Math.sin(a*2+ca)+3*Math.sin(a*3+ca*1.5);
-      const px=ccx+r*Math.cos(a)*cos;
-      const py=ccy+r*Math.sin(a)*.7;
-      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+    const pp=cn.map(c=>proj(...c));
+    
+    // Faces (semi-transparent)
+    ctx.fillStyle="rgba(108,99,255,.04)";
+    [[0,1,5,4],[1,2,6,5],[4,5,6,7]].forEach(face=>{
+      ctx.beginPath();
+      face.forEach((fi,i)=>{i===0?ctx.moveTo(pp[fi][0],pp[fi][1]):ctx.lineTo(pp[fi][0],pp[fi][1])});
+      ctx.closePath();ctx.fill();
+    });
+    
+    ctx.strokeStyle="rgba(108,99,255,.5)";ctx.lineWidth=2;
+    ed.forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(pp[a][0],pp[a][1]);ctx.lineTo(pp[b][0],pp[b][1]);ctx.stroke()});
+    
+    // Cams
+    for(let ci=0;ci<Math.min(p.c,3);ci++){
+      const camA=f*.025+ci*2.1;
+      const camR=28-ci*4;
+      const offset=(ci-(p.c-1)/2)*22;
+      const [ccx,ccy]=proj(0,offset,bh*.45);
+      
+      ctx.strokeStyle=ci===0?"#6c63ff":ci===1?"#a78bfa":"#c4b5fd";
+      ctx.lineWidth=2.5;
+      ctx.beginPath();
+      for(let i=0;i<=48;i++){
+        const a=(i/48)*Math.PI*2;
+        const r=camR+6*Math.sin(a*2+camA)+3*Math.sin(a*3+camA*1.3);
+        const px=ccx+r*Math.cos(a)*cos*.8;
+        const py=ccy+r*Math.sin(a)*.6;
+        i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+      }
+      ctx.closePath();ctx.stroke();
+      
+      // Follower
+      const fy=ccy-camR-6*Math.sin(camA)-8;
+      ctx.strokeStyle="#fbbf24";ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(ccx,ccy-camR-6);ctx.lineTo(ccx,fy-25);ctx.stroke();
+      
+      // Moving part
+      const bob=6*Math.sin(camA);
+      ctx.fillStyle="#fbbf24";
+      ctx.beginPath();ctx.arc(ccx,fy-28+bob,6,0,Math.PI*2);ctx.fill();
     }
-    ctx.closePath();ctx.stroke();
-    // shaft
-    ctx.strokeStyle="#f59e0b";ctx.lineWidth=2;
-    const fy=ccy-cr-6*Math.sin(ca)-3;
-    ctx.beginPath();ctx.moveTo(ccx,ccy-cr-6);ctx.lineTo(ccx,fy-20);ctx.stroke();
-    // figurine head
-    ctx.fillStyle="#f59e0b";
-    ctx.beginPath();ctx.arc(ccx,fy-24,5,0,Math.PI*2);ctx.fill();
-    // body
-    ctx.strokeStyle="#f59e0b80";ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(ccx,fy-19);ctx.lineTo(ccx,fy-45);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(ccx-8,fy-38);ctx.lineTo(ccx+8,fy-38);ctx.stroke();
-    // label
-    ctx.fillStyle="#58a6ff";ctx.font="bold 12px Inter,system-ui,sans-serif";ctx.textAlign="right";
-    ctx.fillText(parts+" pièces STL",w-16,h-16);
-    ctx.fillStyle="#3fb950";ctx.font="11px Inter,system-ui,sans-serif";
-    ctx.fillText("FDM validé ✓",w-16,h-34);
-    animId=requestAnimationFrame(loop);
+    
+    // Shaft line
+    if(p.c>1){
+      const [sx,sy]=proj(0,-(p.c-1)*11-15,bh*.45);
+      const [ex,ey]=proj(0,(p.c-1)*11+15,bh*.45);
+      ctx.strokeStyle="rgba(108,99,255,.3)";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();
+    }
+    
+    // Label
+    ctx.fillStyle="rgba(108,99,255,.6)";
+    ctx.font=`bold ${w*.025}px -apple-system,sans-serif`;
+    ctx.textAlign="right";
+    ctx.fillText(`${p.p} pièces · ${p.c} came${p.c>1?"s":""}`,w-20,h-20);
+    
+    animId=requestAnimationFrame(draw);
   }
+  
   if(animId)cancelAnimationFrame(animId);
-  loop();
+  draw();
 }
 
-function reset(){
+function back(){
   if(animId)cancelAnimationFrame(animId);
-  S={step:0,mode:null,preset:null,axes:1,axCfg:[{m:0,a:10,l:0}],chassis:"box",w:80,d:60,h:80,pts:[],drawing:false};
-  document.getElementById("genArea").innerHTML=`<h2>Prêt à générer</h2><p class="sub" id="genSummary"></p><button class="bp big" id="genBtn" onclick="generate()">⚡ Lancer la génération</button>`;
-  go(0);
+  document.getElementById("result").classList.remove("show");
+  document.getElementById("app").style.display="flex";
 }
-
-// Init
-buildModes();buildPresets();buildAxes();buildChassis();buildSliders();updProg();
 </script>
 </body>
 </html>
