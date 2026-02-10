@@ -1571,6 +1571,7 @@ class FollowerGuide:
     position: Tuple[float, float, float] = (0, 0, 0)
     guide_type: str = "linear"; stroke_mm: float = 15.0
     width: float = 8.0; slot_clearance: float = 0.4
+    direction: str = "vertical"  # V2: "horizontal" for slide movements
 
 def create_linear_follower_guide(guide, config):
     w, h, t = guide.width, guide.stroke_mm+10, config.wall_thickness
@@ -1579,6 +1580,9 @@ def create_linear_follower_guide(guide, config):
     guide_shape = outer.difference(slot)
     if not guide_shape.is_valid: guide_shape = guide_shape.buffer(0)
     mesh = trimesh.creation.extrude_polygon(ensure_polygon(guide_shape), 5.0)
+    # V2: rotate 90° around Z for horizontal slide
+    if getattr(guide, 'direction', 'vertical') == 'horizontal':
+        mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [0, 0, 1]))
     mesh.apply_translation(list(guide.position))
     return mesh
 
@@ -5863,8 +5867,10 @@ class AutomataGenerator:
         guides = []
         for i, track in enumerate(self.scene.tracks):
             amp = max((p.amplitude for p in track.primitives if p.kind != "PAUSE"), default=10)
+            fdir = getattr(track, 'follower_direction', 'vertical')
             guides.append(FollowerGuide(
-                position=(i*20 - (len(self.scene.tracks)-1)*10, 20, 50), stroke_mm=amp))
+                position=(i*20 - (len(self.scene.tracks)-1)*10, 20, 50), stroke_mm=amp,
+                direction=fdir))
         self.chassis_parts = generate_chassis(chassis_config, len(self.cams), guides)
         print(f"  · Châssis: {len(self.chassis_parts)} pièces")
 
