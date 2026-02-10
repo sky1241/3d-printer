@@ -1486,6 +1486,12 @@ class ChassisConfig:
     # 'motor' = N20 motor + steel shaft (needs hardware)
     # 'crank'  = 100% printed: PLA shaft Ø6mm + crank handle + printed collars
     drive_mode: str = 'motor'
+    # ── Chassis type ──
+    # 'box'     = standard 2-wall box (figurines)
+    # 'frame'   = open frame with 4 posts (labyrinthes, tilt platforms)
+    # 'central' = central pillar axis (carousels, turntables)
+    # 'flat'    = minimal flat base, no walls (kinetic art, wave machines)
+    chassis_type: str = 'box'
 
     def __post_init__(self):
         if self.drive_mode == 'crank':
@@ -1624,10 +1630,45 @@ def create_printed_collar(config, z_position=0.0, y_position=0.0):
 
 
 def generate_chassis(config, cam_count=1, follower_guides=None):
+    """Dispatch to the right chassis generator based on config.chassis_type."""
+    ctype = getattr(config, 'chassis_type', 'box')
+    if ctype == 'frame':
+        return generate_chassis_frame(config, cam_count, follower_guides)
+    elif ctype == 'central':
+        return generate_chassis_central(config, cam_count, follower_guides)
+    elif ctype == 'flat':
+        return generate_chassis_flat(config, cam_count, follower_guides)
+    else:
+        return generate_chassis_box(config, cam_count, follower_guides)
+
+
+def _make_shaft_and_drive(config, cam_count, cz, parts):
+    """Shared: camshaft + drive (crank or motor) + collars."""
+    shaft = trimesh.creation.cylinder(radius=config.camshaft_diameter/2,
+                                       height=config.camshaft_length, sections=24)
+    shaft.apply_translation([0, 0, cz])
+    shaft.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
+    parts["camshaft"] = shaft
+    if config.drive_mode == 'crank':
+        parts["crank_handle"] = create_crank_handle(config, z_position=cz)
+        for i in range(cam_count + 1):
+            y = -config.camshaft_length/2 + config.plate_thickness + i * config.cam_spacing
+            parts[f"collar_{i}"] = create_printed_collar(config, z_position=cz, y_position=y)
+    else:
+        parts["motor_mount"] = create_motor_mount(config)
+
+
+def _add_follower_guides(parts, follower_guides, config):
+    """Shared: add follower guides."""
+    if follower_guides:
+        for i, fg in enumerate(follower_guides):
+            parts[f"follower_guide_{i}"] = create_linear_follower_guide(fg, config)
+
+
+def generate_chassis_box(config, cam_count=1, follower_guides=None):
+    """CHASSIS_BOX — Standard 2-wall box for figurines (original design)."""
     config.num_cams = cam_count; config.compute_camshaft_length()
     parts = {}
-
-    # Base plate — no screw holes in crank mode (all snap-fit)
     if config.drive_mode == 'crank':
         w, d, t = config.width, config.depth, config.plate_thickness
         plate = shapely_box(-w/2, -d/2, w/2, d/2)
@@ -1635,32 +1676,126 @@ def generate_chassis(config, cam_count=1, follower_guides=None):
         parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
     else:
         parts["base_plate"] = create_base_plate(config)
-
     cz = config.total_height * 0.5
     parts["wall_left"] = create_bearing_wall(config, "left", [(0, cz)])
     parts["wall_right"] = create_bearing_wall(config, "right", [(0, cz)])
     parts["camshaft_bracket"] = create_camshaft_bracket(config, z_position=cz-7.5)
+    _make_shaft_and_drive(config, cam_count, cz, parts)
+    _add_follower_guides(parts, follower_guides, config)
+    return parts
 
-    if config.drive_mode == 'crank':
-        parts["crank_handle"] = create_crank_handle(config, z_position=cz)
-        # Printed collars replace e-clips
-        collar_positions = []
-        for i in range(cam_count + 1):
-            y = -config.camshaft_length/2 + config.plate_thickness + i * config.cam_spacing
-            collar_positions.append(y)
-        for i, yp in enumerate(collar_positions):
-            parts[f"collar_{i}"] = create_printed_collar(config, z_position=cz, y_position=yp)
-    else:
-        parts["motor_mount"] = create_motor_mount(config)
 
-    shaft = trimesh.creation.cylinder(radius=config.camshaft_diameter/2,
-                                       height=config.camshaft_length, sections=24)
-    shaft.apply_translation([0, 0, cz])
-    shaft.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
-    parts["camshaft"] = shaft
-    if follower_guides:
-        for i, fg in enumerate(follower_guides):
-            parts[f"follower_guide_{i}"] = create_linear_follower_guide(fg, config)
+def generate_chassis_frame(config, cam_count=1, follower_guides=None):
+    """CHASSIS_FRAME — Open frame with 4 corner posts.
+    Good for labyrinthes, tilt platforms, anything needing open access."""
+    config.num_cams = cam_count; config.compute_camshaft_length()
+    parts = {}
+    w, d, t = config.width, config.depth, config.plate_thickness
+    post_r = config.pillar_diameter / 2
+    post_h = config.total_height
+
+    # Base plate (simple, no motor hole in crank mode)
+    plate = shapely_box(-w/2, -d/2, w/2, d/2)
+    if config.drive_mode != 'crank':
+        plate = plate.difference(Point(0, -d/4).buffer(config.motor_diameter/2+0.5, resolution=32))
+    if not plate.is_valid: plate = plate.buffer(0)
+    parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
+
+    # 4 corner posts
+    for i, (sx, sy) in enumerate([(-1,-1), (1,-1), (1,1), (-1,1)]):
+        post = trimesh.creation.cylinder(radius=post_r, height=post_h, sections=16)
+        post.apply_translation([sx*(w/2 - post_r - 2), sy*(d/2 - post_r - 2), post_h/2 + t])
+        parts[f"post_{i}"] = post
+
+    # Cross rails at camshaft height for bearing support
+    cz = config.total_height * 0.4
+    rail_w = config.wall_thickness
+    rail_h = 12.0
+    for side, sx in [("left", -1), ("right", 1)]:
+        rail_shape = shapely_box(-rail_w/2, 0, rail_w/2, rail_h)
+        # Bearing hole
+        br = config.camshaft_diameter/2 + config.bearing_clearance
+        rail_shape = rail_shape.difference(Point(0, rail_h/2).buffer(br, resolution=24))
+        if not rail_shape.is_valid: rail_shape = rail_shape.buffer(0)
+        mesh = trimesh.creation.extrude_polygon(ensure_polygon(rail_shape), d - 15)
+        mesh.apply_translation([sx*(w/2 - post_r - 2), -d/2 + 7.5, cz])
+        parts[f"rail_{side}"] = mesh
+
+    _make_shaft_and_drive(config, cam_count, cz + rail_h/2, parts)
+    _add_follower_guides(parts, follower_guides, config)
+    return parts
+
+
+def generate_chassis_central(config, cam_count=1, follower_guides=None):
+    """CHASSIS_CENTRAL — Central pillar with platform.
+    Good for carousels, turntables, anything rotating around a vertical axis."""
+    config.num_cams = cam_count; config.compute_camshaft_length()
+    parts = {}
+    w, d, t = config.width, config.depth, config.plate_thickness
+    pillar_r = config.pillar_diameter
+    pillar_h = config.total_height * 0.6
+
+    # Circular base plate
+    base_r = max(w, d) / 2
+    base = Point(0, 0).buffer(base_r, resolution=48)
+    if config.drive_mode != 'crank':
+        base = base.difference(Point(base_r * 0.6, 0).buffer(config.motor_diameter/2+0.5, resolution=32))
+    if not base.is_valid: base = base.buffer(0)
+    parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(base), t)
+
+    # Central pillar
+    pillar = trimesh.creation.cylinder(radius=pillar_r, height=pillar_h, sections=24)
+    pillar.apply_translation([0, 0, pillar_h/2 + t])
+    parts["central_pillar"] = pillar
+
+    # Top bearing ring (holds the shaft horizontally through the pillar top)
+    bearing_ring_r = pillar_r + 3
+    bearing_ring_h = 5.0
+    ring_shape = Point(0, 0).buffer(bearing_ring_r, resolution=32)
+    ring_shape = ring_shape.difference(
+        Point(0, 0).buffer(config.camshaft_diameter/2 + config.bearing_clearance, resolution=24))
+    if not ring_shape.is_valid: ring_shape = ring_shape.buffer(0)
+    ring = trimesh.creation.extrude_polygon(ensure_polygon(ring_shape), bearing_ring_h)
+    ring.apply_translation([0, 0, pillar_h + t])
+    parts["bearing_ring"] = ring
+
+    cz = pillar_h * 0.5 + t
+    _make_shaft_and_drive(config, cam_count, cz, parts)
+    _add_follower_guides(parts, follower_guides, config)
+    return parts
+
+
+def generate_chassis_flat(config, cam_count=1, follower_guides=None):
+    """CHASSIS_FLAT — Minimal flat base, no walls.
+    Good for kinetic art, wave machines, exposed mechanisms."""
+    config.num_cams = cam_count; config.compute_camshaft_length()
+    parts = {}
+    w, d, t = config.width, config.depth, config.plate_thickness
+    # Wider, shallower base for stability
+    flat_w = max(w * 1.2, 100)
+    flat_d = max(d * 1.0, 60)
+
+    plate = shapely_box(-flat_w/2, -flat_d/2, flat_w/2, flat_d/2)
+    if config.drive_mode != 'crank':
+        plate = plate.difference(Point(0, -flat_d/4).buffer(config.motor_diameter/2+0.5, resolution=32))
+    if not plate.is_valid: plate = plate.buffer(0)
+    parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
+
+    # Low bearing supports (short L-brackets instead of full walls)
+    cz = t + 15.0  # shaft very low, close to base
+    bracket_h = 20.0
+    bracket_w = config.wall_thickness
+    for side, sx in [("left", -1), ("right", 1)]:
+        brk = shapely_box(-bracket_w/2, 0, bracket_w/2, bracket_h)
+        br = config.camshaft_diameter/2 + config.bearing_clearance
+        brk = brk.difference(Point(0, bracket_h * 0.6).buffer(br, resolution=24))
+        if not brk.is_valid: brk = brk.buffer(0)
+        mesh = trimesh.creation.extrude_polygon(ensure_polygon(brk), 8.0)
+        mesh.apply_translation([sx*(flat_w/2 - 8), -4, t])
+        parts[f"bracket_{side}"] = mesh
+
+    _make_shaft_and_drive(config, cam_count, t + bracket_h * 0.6, parts)
+    _add_follower_guides(parts, follower_guides, config)
     return parts
 
 
@@ -4183,6 +4318,7 @@ def create_geneva_scene(style=MotionStyle.MECHANICAL):
     scene.joints = [
         Joint("geneva_joint", "revolute", (0,0,1), (0,0,15), "body", "platform", (-360, 360))]
     scene.tracks = [MotionTrack("geneva_joint", primitives=expand_geneva_primitives(4, 15, law))]
+    scene._chassis_type = 'central'
     return scene
 
 
@@ -4250,6 +4386,7 @@ def create_multi_scene(style=MotionStyle.FLUID):
         MotionTrack("horiz_joint", phase_offset_deg=90, primitives=[
             MotionPrimitive("WAVE", 10, 360, law)],
             follower_direction="horizontal")]
+    scene._chassis_type = 'flat'
     return scene
 
 
@@ -5120,6 +5257,7 @@ class FigurineConfig:
     movement_amplitude: float = 0.0  # 0=auto
     cycle_rpm: float = 0.0     # 0=auto (SceneBuilder decides)
     drive_mode: str = 'crank'  # 'crank'=100% printed, 'motor'=N20 motorized
+    chassis_type: str = 'box'  # 'box', 'frame', 'central', 'flat'
 
 
 class FigurineBuilder:
@@ -5440,6 +5578,12 @@ class SceneBuilder:
         scene._figurine_cfg = cfg
         # Drive mode: 'crank' (100% printed) or 'motor' (N20)
         scene._drive_mode = getattr(cfg, 'drive_mode', 'crank')
+        # Chassis type: FigurineConfig override > scene template default > 'box'
+        cfg_ct = getattr(cfg, 'chassis_type', 'box')
+        if cfg_ct != 'box':
+            scene._chassis_type = cfg_ct
+        elif not hasattr(scene, '_chassis_type'):
+            scene._chassis_type = 'box'
         # Mark as parametric (avoid hardcoded generator)
         scene._preset_name = None
         return scene
@@ -5656,6 +5800,20 @@ def parse_text_to_figurine_config(user_text: str) -> FigurineConfig:
     if cfg.height <= 0:
         cfg.height = HEIGHT_DEFAULTS.get(cfg.body_type, 40.0)
 
+    # ── Chassis type inference ──
+    if any(w in t for w in ['labyrinthe', 'labyrinth', 'maze', 'bille', 'tilt']):
+        cfg.chassis_type = 'frame'
+    elif any(w in t for w in ['carrousel', 'carousel', 'plateau tournant', 'turntable', 'manège']):
+        cfg.chassis_type = 'central'
+    elif any(w in t for w in ['art cinétique', 'kinetic', 'vague', 'wave machine',
+                               'pendule', 'pendulum', 'sculpture']):
+        cfg.chassis_type = 'flat'
+    # geneva movement → central chassis by default
+    elif cfg.movement == 'geneva':
+        cfg.chassis_type = 'central'
+    elif cfg.movement == 'multi':
+        cfg.chassis_type = 'flat'
+
     # Clamp for Ender-3 envelope
     cfg.height = float(np.clip(cfg.height, 25.0, 90.0))
 
@@ -5862,7 +6020,8 @@ class AutomataGenerator:
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
 
         chassis_config = ChassisConfig(width=80, depth=60, total_height=70, num_cams=len(self.cams),
-                                      drive_mode=getattr(self.scene, '_drive_mode', 'motor'))
+                                      drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
+                                      chassis_type=getattr(self.scene, '_chassis_type', 'box'))
         chassis_config.__post_init__()  # apply crank overrides if needed
         guides = []
         for i, track in enumerate(self.scene.tracks):
