@@ -1,0 +1,296 @@
+{
+  "machine": {
+    "name": "Bambu Lab X1 Carbon",
+    "build_volume_mm": [
+      256,
+      256,
+      256
+    ],
+    "nozzle_mm": 0.4,
+    "max_speed_mm_s": 500,
+    "max_accel_mm_s2": 20000,
+    "max_nozzle_temp_c": 300,
+    "max_bed_temp_c": 120,
+    "enclosed": true,
+    "ams": true,
+    "materials": [
+      "PLA",
+      "PETG",
+      "TPU",
+      "PVA",
+      "ABS",
+      "ASA",
+      "PA",
+      "PC",
+      "PET",
+      "PLA-CF",
+      "PETG-CF"
+    ],
+    "slicer": "Bambu Studio",
+    "layer_heights": [
+      0.08,
+      0.12,
+      0.16,
+      0.2,
+      0.24,
+      0.28
+    ],
+    "default_layer": 0.2,
+    "nozzle_options": [
+      0.2,
+      0.4,
+      0.6,
+      0.8
+    ],
+    "vibration_compensation": true,
+    "lidar_first_layer": true,
+    "auto_bed_level": true
+  },
+  "results": [
+    {
+      "preset": "nodding_bird",
+      "parts": 17,
+      "max_dims_mm": [
+        80.0,
+        78.2,
+        75.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "flapping_bird",
+      "parts": 22,
+      "max_dims_mm": [
+        235.6,
+        234.8,
+        77.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "walking_figure",
+      "parts": 24,
+      "max_dims_mm": [
+        80.0,
+        60.9,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "bobbing_duck",
+      "parts": 16,
+      "max_dims_mm": [
+        80.0,
+        64.3,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "rocking_horse",
+      "parts": 22,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "pecking_chicken",
+      "parts": 20,
+      "max_dims_mm": [
+        120.6,
+        133.8,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "waving_cat",
+      "parts": 18,
+      "max_dims_mm": [
+        156.7,
+        145.9,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "drummer",
+      "parts": 21,
+      "max_dims_mm": [
+        161.0,
+        131.9,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "blacksmith",
+      "parts": 17,
+      "max_dims_mm": [
+        237.1,
+        249.8,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "swimming_fish",
+      "parts": 18,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        73.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "slider",
+      "parts": 8,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "rocker",
+      "parts": 8,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "turntable",
+      "parts": 7,
+      "max_dims_mm": [
+        372.8,
+        372.8,
+        42.0
+      ],
+      "fits_x1c": false,
+      "oversized": [
+        "cam_geneva_joint: X=373mm > 256mm",
+        "cam_geneva_joint: Y=373mm > 256mm"
+      ]
+    },
+    {
+      "preset": "sequence",
+      "parts": 12,
+      "max_dims_mm": [
+        159.9,
+        158.0,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "striker",
+      "parts": 8,
+      "max_dims_mm": [
+        80.0,
+        69.4,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "holder",
+      "parts": 8,
+      "max_dims_mm": [
+        138.4,
+        126.5,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "multi_axis",
+      "parts": 9,
+      "max_dims_mm": [
+        100.0,
+        60.0,
+        25.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "duck",
+      "parts": 16,
+      "max_dims_mm": [
+        80.0,
+        64.3,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "horse",
+      "parts": 22,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "chicken",
+      "parts": 20,
+      "max_dims_mm": [
+        120.6,
+        133.8,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "cat",
+      "parts": 18,
+      "max_dims_mm": [
+        156.7,
+        145.9,
+        50.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    },
+    {
+      "preset": "fish",
+      "parts": 18,
+      "max_dims_mm": [
+        80.0,
+        60.0,
+        73.0
+      ],
+      "fits_x1c": true,
+      "oversized": []
+    }
+  ]
+}
