@@ -1,0 +1,132 @@
+{
+  "date": "2026-02-10",
+  "status": "BACKUP",
+  "tests": [],
+  "presets": [
+    {
+      "name": "nodding_bird",
+      "status": "OK",
+      "parts": 17
+    },
+    {
+      "name": "flapping_bird",
+      "status": "OK",
+      "parts": 22
+    },
+    {
+      "name": "walking_figure",
+      "status": "OK",
+      "parts": 24
+    },
+    {
+      "name": "bobbing_duck",
+      "status": "OK",
+      "parts": 16
+    },
+    {
+      "name": "rocking_horse",
+      "status": "OK",
+      "parts": 22
+    },
+    {
+      "name": "pecking_chicken",
+      "status": "OK",
+      "parts": 20
+    },
+    {
+      "name": "waving_cat",
+      "status": "OK",
+      "parts": 18
+    },
+    {
+      "name": "drummer",
+      "status": "OK",
+      "parts": 21
+    },
+    {
+      "name": "blacksmith",
+      "status": "OK",
+      "parts": 17
+    },
+    {
+      "name": "swimming_fish",
+      "status": "OK",
+      "parts": 18
+    },
+    {
+      "name": "slider",
+      "status": "OK",
+      "parts": 8
+    },
+    {
+      "name": "rocker",
+      "status": "OK",
+      "parts": 8
+    },
+    {
+      "name": "turntable",
+      "status": "OK",
+      "parts": 7
+    },
+    {
+      "name": "sequence",
+      "status": "OK",
+      "parts": 12
+    },
+    {
+      "name": "striker",
+      "status": "OK",
+      "parts": 8
+    },
+    {
+      "name": "holder",
+      "status": "OK",
+      "parts": 8
+    },
+    {
+      "name": "multi_axis",
+      "status": "OK",
+      "parts": 9
+    },
+    {
+      "name": "duck",
+      "status": "OK",
+      "parts": 16
+    },
+    {
+      "name": "horse",
+      "status": "OK",
+      "parts": 22
+    },
+    {
+      "name": "chicken",
+      "status": "OK",
+      "parts": 20
+    },
+    {
+      "name": "cat",
+      "status": "OK",
+      "parts": 18
+    },
+    {
+      "name": "fish",
+      "status": "OK",
+      "parts": 18
+    }
+  ],
+  "briques": [
+    {
+      "name": "G_InverseSolver",
+      "status": "OK",
+      "rms": 1.3839060575832092
+    }
+  ],
+  "summary": {
+    "presets_ok": 22,
+    "presets_total": 22,
+    "total_lines": 16243,
+    "briques": "A\u2192G (7/7)",
+    "tests_passing": 94,
+    "crash_count": 0
+  }
+}
