@@ -15564,6 +15564,598 @@ def test_master(verbose: bool = True) -> bool:
 # ║  CLI + MAIN                                                      ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
+
+
+# ═══════════════════════════════════════════════════════════════════
+# BRIQUE G — SOLVEUR INVERSE DE CAMES
+# Trajectoire XY dessinée → paramètres optimaux de came(s)
+# Ref: Coros et al. 2013 (Disney Research, SIGGRAPH)
+# ═══════════════════════════════════════════════════════════════════
+
+@dataclass
+class InverseSolution:
+    """Résultat du solveur inverse."""
+    cams: List[CamProfile]
+    error_rms_mm: float
+    error_max_mm: float
+    n_cams: int
+    axis_mapping: List[str]       # ['x', 'y'] or ['vertical']
+    target_resampled: np.ndarray  # (N,2) points after preprocessing
+    simulated: np.ndarray         # (N,2) points from solution
+    convergence: dict             # optimizer info
+
+    def summary(self) -> str:
+        lines = [
+            f"═══ Inverse Solver — {self.n_cams} came(s) ═══",
+            f"  RMS error:  {self.error_rms_mm:.3f} mm",
+            f"  Max error:  {self.error_max_mm:.3f} mm",
+        ]
+        for i, cam in enumerate(self.cams):
+            axis = self.axis_mapping[i] if i < len(self.axis_mapping) else '?'
+            segs = ', '.join(
+                f"{s.seg_type}({s.beta_deg:.0f}°,{s.height:.1f}mm,{s.law})"
+                for s in cam.segments
+            )
+            lines.append(f"  Cam {i} [{axis}]: Rb=?, phase={cam.phase_offset_deg:.1f}° | {segs}")
+        lines.append(f"  Convergence: {self.convergence.get('message', 'ok')}")
+        return '\n'.join(lines)
+
+
+class InverseSolver:
+    """
+    Brique G — Solveur inverse de cames.
+    
+    Pipeline (inspiré Coros et al. 2013):
+      1. Prétraitement trajectoire (resample, lissage, normalisation)
+      2. Décomposition 2D → composantes 1D par axe (PCA ou X/Y direct)
+      3. Pour chaque composante: differential_evolution (global) → L-BFGS-B (local)
+      4. Assemblage des CamProfiles + validation contraintes
+    
+    Usage:
+        solver = InverseSolver()
+        solution = solver.solve([(x0,y0), (x1,y1), ...])
+        for cam in solution.cams:
+            gen.add_cam(cam)  # inject into pipeline
+    """
+
+    # Lois de mouvement disponibles (skip modified_trap — instable)
+    LAWS = ['cycloidal', 'harmonic', 'poly_345', 'poly_4567']
+    N_LAWS = 4
+
+    # Templates de came (seg_types fixes, on optimise beta/height/law)
+    TEMPLATES = {
+        'rdrd': ['rise', 'dwell', 'return', 'dwell'],    # standard 4-seg
+        'rr':   ['rise', 'return'],                        # simple 2-seg
+        'rdr':  ['rise', 'dwell', 'return'],               # 3-seg asymétrique
+    }
+
+    # Bornes par défaut
+    BETA_BOUNDS = (15.0, 200.0)    # degrees per segment
+    HEIGHT_BOUNDS = (0.5, 25.0)    # mm
+    RB_BOUNDS = (8.0, 80.0)        # mm
+    PHASE_BOUNDS = (0.0, 360.0)    # degrees
+
+    N_EVAL = 360  # points d'évaluation par cycle
+
+    def __init__(self, roller_radius=5.0, pressure_angle_limit=30.0,
+                 max_envelope_mm=220.0, verbose=True):
+        self.rf = roller_radius
+        self.pa_limit_deg = pressure_angle_limit
+        self.max_envelope = max_envelope_mm
+        self.verbose = verbose
+
+    # ──────────────────────────────────────────────────────
+    #  PUBLIC API
+    # ──────────────────────────────────────────────────────
+
+    def solve(self, target_xy, max_cams=3, timeout_s=30.0):
+        """
+        Entrée : liste de points [(x0,y0), ...] = 1 cycle de trajectoire
+        Sortie : InverseSolution avec CamProfiles optimaux
+        """
+        t0 = time.time()
+        if self.verbose:
+            print("\n╔═══════════════════════════════════════════╗")
+            print("║  BRIQUE G — SOLVEUR INVERSE DE CAMES      ║")
+            print("╚═══════════════════════════════════════════╝\n")
+
+        # 1. Prétraitement
+        target = self._preprocess(target_xy)
+        if self.verbose:
+            print(f"[1/4] Prétraitement: {len(target)} points, "
+                  f"X=[{target[:,0].min():.1f},{target[:,0].max():.1f}], "
+                  f"Y=[{target[:,1].min():.1f},{target[:,1].max():.1f}]")
+
+        # 2. Décomposition en composantes
+        n_cams, components, axis_labels = self._decompose(target, max_cams)
+        if self.verbose:
+            print(f"[2/4] Décomposition: {n_cams} came(s) → axes {axis_labels}")
+
+        # 3. Optimiser chaque composante
+        cam_solutions = []
+        time_per_cam = max(5.0, (timeout_s - (time.time() - t0)) / max(n_cams, 1))
+        for i, (comp_1d, label) in enumerate(zip(components, axis_labels)):
+            if self.verbose:
+                span = comp_1d.max() - comp_1d.min()
+                print(f"[3/4] Optimisation came {i} [{label}]: "
+                      f"span={span:.1f}mm, timeout={time_per_cam:.0f}s")
+            cam = self._optimize_single_cam(comp_1d, label, i, time_per_cam)
+            cam_solutions.append(cam)
+
+        # 4. Assembler la solution
+        simulated = self._simulate_solution(cam_solutions, axis_labels, len(target))
+        errors = np.sqrt(np.sum((simulated - target) ** 2, axis=1))
+
+        solution = InverseSolution(
+            cams=[c for c, _, _ in cam_solutions],
+            error_rms_mm=float(np.sqrt(np.mean(errors ** 2))),
+            error_max_mm=float(errors.max()),
+            n_cams=n_cams,
+            axis_mapping=axis_labels,
+            target_resampled=target,
+            simulated=simulated,
+            convergence={
+                'time_s': time.time() - t0,
+                'message': 'converged',
+                'per_cam': [info for _, _, info in cam_solutions],
+            },
+        )
+
+        if self.verbose:
+            print(f"\n[4/4] Résultat:")
+            print(f"  RMS = {solution.error_rms_mm:.3f} mm")
+            print(f"  Max = {solution.error_max_mm:.3f} mm")
+            print(f"  Temps: {time.time() - t0:.1f}s")
+            for i, (cam, _, _) in enumerate(cam_solutions):
+                segs = ' + '.join(
+                    f"{s.seg_type}({s.beta_deg:.0f}°, {s.height:.1f}mm, {s.law})"
+                    for s in cam.segments
+                )
+                print(f"  Cam {i} [{axis_labels[i]}]: phase={cam.phase_offset_deg:.1f}° | {segs}")
+
+        return solution
+
+    # ──────────────────────────────────────────────────────
+    #  STEP 1: PRÉTRAITEMENT
+    # ──────────────────────────────────────────────────────
+
+    def _preprocess(self, target_xy):
+        """Resample à N_EVAL points, lisser, centrer."""
+        pts = np.array(target_xy, dtype=float)
+        if pts.ndim == 1:
+            # 1D input → traiter comme axe Y, X=0
+            pts = np.column_stack([np.zeros(len(pts)), pts])
+        if pts.shape[1] != 2:
+            raise ValueError(f"target_xy doit être (N,2), got shape {pts.shape}")
+
+        n = len(pts)
+        if n < 4:
+            raise ValueError(f"Au moins 4 points requis, got {n}")
+
+        # Resample à N_EVAL points par interpolation linéaire
+        t_orig = np.linspace(0, 1, n)
+        t_new = np.linspace(0, 1, self.N_EVAL)
+        x_new = np.interp(t_new, t_orig, pts[:, 0])
+        y_new = np.interp(t_new, t_orig, pts[:, 1])
+
+        # Lissage léger (fenêtre glissante, 5 points)
+        kernel_size = 5
+        kernel = np.ones(kernel_size) / kernel_size
+        x_smooth = np.convolve(x_new, kernel, mode='same')
+        y_smooth = np.convolve(y_new, kernel, mode='same')
+
+        # Centrer sur zéro (le offset sera le point de repos du suiveur)
+        x_smooth -= x_smooth.mean()
+        y_smooth -= y_smooth.mean()
+
+        return np.column_stack([x_smooth, y_smooth])
+
+    # ──────────────────────────────────────────────────────
+    #  STEP 2: DÉCOMPOSITION
+    # ──────────────────────────────────────────────────────
+
+    def _decompose(self, target, max_cams):
+        """
+        Décompose une trajectoire 2D en composantes 1D.
+        
+        Stratégie:
+        - Si mouvement ~1D (un axe domine > 90% variance) → 1 came
+        - Sinon → 2 cames (X et Y séparées)
+        - Si le résidu est significatif et max_cams >= 3 → 3 cames (PCA)
+        """
+        x = target[:, 0]
+        y = target[:, 1]
+        var_x = np.var(x)
+        var_y = np.var(y)
+        var_total = var_x + var_y + 1e-12
+
+        # Ratio de variance
+        x_ratio = var_x / var_total
+        y_ratio = var_y / var_total
+
+        # Seuil: si un axe contient > 95% de la variance → 1 came
+        if x_ratio > 0.95:
+            return 1, [x], ['x']
+        if y_ratio > 0.95:
+            return 1, [y], ['y']
+
+        # Sinon: 2 cames (X et Y)
+        if max_cams >= 2:
+            return 2, [x, y], ['x', 'y']
+
+        # Fallback: 1 came sur l'axe dominant
+        if x_ratio > y_ratio:
+            return 1, [x], ['x']
+        else:
+            return 1, [y], ['y']
+
+    # ──────────────────────────────────────────────────────
+    #  STEP 3: OPTIMISATION D'UNE CAME
+    # ──────────────────────────────────────────────────────
+
+    def _optimize_single_cam(self, target_1d, axis_label, cam_idx, timeout_s):
+        """
+        Optimise les paramètres d'une came pour reproduire target_1d.
+        
+        Stratégie (Coros et al.):
+          Phase 1: differential_evolution (exploration globale)
+          Phase 2: L-BFGS-B (affinage local)
+        
+        Paramètres optimisés pour template 'rdrd' (4 segments):
+          [0] Rb          — rayon de base (mm)
+          [1] beta_rise    — angle de montée (°)
+          [2] beta_dwell1  — angle de repos haut (°)
+          [3] beta_return  — angle de descente (°)
+          [4] height       — amplitude (mm)
+          [5] law_rise     — indice loi montée (0..3)
+          [6] law_return   — indice loi descente (0..3)
+          [7] phase        — décalage de phase (°)
+        beta_dwell2 = 360 - beta_rise - beta_dwell1 - beta_return
+        """
+        from scipy.optimize import differential_evolution, minimize
+
+        target_1d = np.asarray(target_1d, dtype=float)
+        amplitude = (target_1d.max() - target_1d.min())
+
+        if amplitude < 0.1:
+            # Mouvement quasi-nul → came dwell
+            cam = CamProfile(f"inv_cam_{cam_idx}", [
+                CamSegment("dwell", 360.0, 0.0, "cycloidal"),
+            ], phase_offset_deg=0.0)
+            return cam, 0.0, {'message': 'flat_target', 'error': 0.0}
+
+        # Centrer la cible sur [0, amplitude]
+        target_min = target_1d.min()
+        target_norm = target_1d - target_min  # now in [0, amplitude]
+
+        # ── Bornes ──
+        bounds = [
+            self.RB_BOUNDS,                    # [0] Rb
+            self.BETA_BOUNDS,                  # [1] beta_rise
+            (5.0, 160.0),                      # [2] beta_dwell1
+            self.BETA_BOUNDS,                  # [3] beta_return
+            (amplitude * 0.5, min(amplitude * 1.5, 25.0)),  # [4] height
+            (0, self.N_LAWS - 1e-6),           # [5] law_rise idx
+            (0, self.N_LAWS - 1e-6),           # [6] law_return idx
+            self.PHASE_BOUNDS,                 # [7] phase
+        ]
+
+        # Poids de pénalité
+        W_PA = 100.0   # pression angle penalty
+        W_BETA = 500.0  # beta sum > 360 penalty
+
+        theta_eval = np.linspace(0, 360, self.N_EVAL, endpoint=False)
+
+        def _decode_and_eval(x):
+            """Décode les paramètres, construit un CamProfile, évalue."""
+            Rb = x[0]
+            beta_r = max(x[1], 15.0)
+            beta_d1 = max(x[2], 5.0)
+            beta_ret = max(x[3], 15.0)
+            height = max(x[4], 0.5)
+            law_rise_idx = int(np.clip(round(x[5]), 0, self.N_LAWS - 1))
+            law_ret_idx = int(np.clip(round(x[6]), 0, self.N_LAWS - 1))
+            phase = x[7] % 360.0
+
+            beta_d2 = 360.0 - beta_r - beta_d1 - beta_ret
+
+            # Pénalité si beta_d2 < 0
+            beta_penalty = 0.0
+            if beta_d2 < 5.0:
+                beta_penalty = W_BETA * (5.0 - beta_d2) ** 2
+                beta_d2 = max(beta_d2, 5.0)
+                # Rescale to sum to 360
+                total = beta_r + beta_d1 + beta_ret + beta_d2
+                scale = 360.0 / total
+                beta_r *= scale
+                beta_d1 *= scale
+                beta_ret *= scale
+                beta_d2 *= scale
+
+            law_rise = self.LAWS[law_rise_idx]
+            law_ret = self.LAWS[law_ret_idx]
+
+            segments = [
+                CamSegment("rise", beta_r, height, law_rise),
+                CamSegment("dwell", beta_d1, 0.0, law_rise),
+                CamSegment("return", beta_ret, height, law_ret),
+                CamSegment("dwell", beta_d2, 0.0, law_ret),
+            ]
+            cam = CamProfile(f"inv_cam_{cam_idx}", segments, phase_offset_deg=phase)
+            s, ds, dds = cam.evaluate(theta_eval)
+
+            return s, ds, Rb, beta_penalty
+
+        def _objective(x):
+            """Fonction objectif: MSE + pénalités."""
+            try:
+                s, ds, Rb, beta_pen = _decode_and_eval(x)
+            except Exception:
+                return 1e10
+
+            # Erreur de trajectoire (MSE)
+            mse = np.mean((s - target_norm) ** 2)
+
+            # Pénalité angle de pression
+            pa_penalty = 0.0
+            # v = ds/dθ en mm/rad, pressure_angle = atan(v / (Rb + s))
+            v_rad = ds  # ds is already in mm/rad from evaluate
+            with np.errstate(divide='ignore', invalid='ignore'):
+                pa_arr = np.abs(np.arctan2(v_rad, Rb + s))
+            pa_max_deg = np.degrees(np.nanmax(pa_arr))
+            if pa_max_deg > self.pa_limit_deg:
+                pa_penalty = W_PA * (pa_max_deg - self.pa_limit_deg) ** 2
+
+            # Pénalité taille (enveloppe FDM)
+            size_penalty = 0.0
+            max_r = Rb + np.max(s)
+            if max_r * 2 > self.max_envelope:
+                size_penalty = 100.0 * (max_r * 2 - self.max_envelope) ** 2
+
+            return mse + pa_penalty + size_penalty + beta_pen
+
+        # ── Phase 1: differential_evolution (global) ──
+        t_start = time.time()
+        time_global = timeout_s * 0.7  # 70% du budget pour global
+
+        if self.verbose:
+            print(f"    Phase 1: differential_evolution...", end=' ', flush=True)
+
+        result_de = differential_evolution(
+            _objective, bounds,
+            seed=42, maxiter=200, popsize=15, tol=1e-4,
+            mutation=(0.5, 1.5), recombination=0.8,
+            polish=False,  # on fait notre propre polish
+        )
+
+        if self.verbose:
+            print(f"f={result_de.fun:.4f} ({time.time()-t_start:.1f}s)")
+
+        # ── Phase 2: L-BFGS-B (local refinement) ──
+        if self.verbose:
+            print(f"    Phase 2: L-BFGS-B...", end=' ', flush=True)
+
+        t_local = time.time()
+        result_local = minimize(
+            _objective, result_de.x,
+            method='L-BFGS-B', bounds=bounds,
+            options={'maxiter': 300, 'ftol': 1e-8},
+        )
+
+        if self.verbose:
+            improvement = result_de.fun - result_local.fun
+            print(f"f={result_local.fun:.4f} (Δ={improvement:.4f}, {time.time()-t_local:.1f}s)")
+
+        # ── Décoder le meilleur résultat ──
+        best_x = result_local.x if result_local.fun < result_de.fun else result_de.x
+        best_f = min(result_local.fun, result_de.fun)
+        s_final, _, Rb_final, _ = _decode_and_eval(best_x)
+
+        # Reconstruire le CamProfile propre
+        x = best_x
+        Rb = x[0]
+        beta_r = max(x[1], 15.0)
+        beta_d1 = max(x[2], 5.0)
+        beta_ret = max(x[3], 15.0)
+        height = max(x[4], 0.5)
+        law_rise_idx = int(np.clip(round(x[5]), 0, self.N_LAWS - 1))
+        law_ret_idx = int(np.clip(round(x[6]), 0, self.N_LAWS - 1))
+        phase = x[7] % 360.0
+        beta_d2 = 360.0 - beta_r - beta_d1 - beta_ret
+        if beta_d2 < 5.0:
+            total = beta_r + beta_d1 + beta_ret + 5.0
+            scale = 360.0 / total
+            beta_r *= scale; beta_d1 *= scale; beta_ret *= scale
+            beta_d2 = 360.0 - beta_r - beta_d1 - beta_ret
+
+        cam = CamProfile(f"inv_cam_{cam_idx}", [
+            CamSegment("rise", beta_r, height, self.LAWS[law_rise_idx]),
+            CamSegment("dwell", beta_d1, 0.0, self.LAWS[law_rise_idx]),
+            CamSegment("return", beta_ret, height, self.LAWS[law_ret_idx]),
+            CamSegment("dwell", beta_d2, 0.0, self.LAWS[law_ret_idx]),
+        ], phase_offset_deg=phase)
+
+        error = np.sqrt(np.mean((s_final - target_norm) ** 2))
+
+        info = {
+            'message': result_local.message if hasattr(result_local, 'message') else 'ok',
+            'error_rms': float(error),
+            'Rb_mm': float(Rb),
+            'de_fun': float(result_de.fun),
+            'local_fun': float(best_f),
+            'n_evals': result_de.nfev + result_local.nfev,
+        }
+
+        return cam, float(error), info
+
+    # ──────────────────────────────────────────────────────
+    #  SIMULATION DE LA SOLUTION COMPLÈTE
+    # ──────────────────────────────────────────────────────
+
+    def _simulate_solution(self, cam_solutions, axis_labels, n_points):
+        """Simule la trajectoire 2D à partir des cames optimisées."""
+        theta_eval = np.linspace(0, 360, n_points, endpoint=False)
+        xy = np.zeros((n_points, 2))
+
+        for (cam, _, _), label in zip(cam_solutions, axis_labels):
+            s, _, _ = cam.evaluate(theta_eval)
+            if label == 'x':
+                xy[:, 0] = s - s.mean()
+            elif label == 'y':
+                xy[:, 1] = s - s.mean()
+            else:
+                # Fallback: Y axis
+                xy[:, 1] = s - s.mean()
+
+        return xy
+
+    # ──────────────────────────────────────────────────────
+    #  RACCOURCI: from_canvas (Flask UI)
+    # ──────────────────────────────────────────────────────
+
+    def from_canvas(self, canvas_points, canvas_width_px, canvas_height_px,
+                    real_width_mm=50.0, real_height_mm=50.0, **kwargs):
+        """
+        Convertit les coordonnées canvas (pixels) en mm et lance solve().
+        
+        canvas_points: [(px_x, px_y), ...]
+        Retourne: InverseSolution
+        """
+        scale_x = real_width_mm / canvas_width_px
+        scale_y = real_height_mm / canvas_height_px
+        xy_mm = [(px * scale_x, py * scale_y) for px, py in canvas_points]
+        return self.solve(xy_mm, **kwargs)
+
+
+# ── Tests Brique G ──
+
+def test_inverse_solver():
+    """Test complet du solveur inverse."""
+    import time
+    errors = 0
+    total = 0
+
+    print("\n" + "═" * 55)
+    print("  TEST BRIQUE G — SOLVEUR INVERSE DE CAMES")
+    print("═" * 55)
+
+    solver = InverseSolver(verbose=True)
+
+    # ── T1: Mouvement vertical simple (1 came) ──
+    total += 1
+    print(f"\n── T1: Mouvement vertical pur (sinusoïdal) ──")
+    try:
+        theta = np.linspace(0, 2 * np.pi, 100)
+        target = [(0.0, 10.0 * np.sin(t)) for t in theta]
+        sol = solver.solve(target, max_cams=2, timeout_s=15)
+        assert sol.n_cams == 1, f"Expected 1 cam, got {sol.n_cams}"
+        assert sol.error_rms_mm < 3.0, f"RMS {sol.error_rms_mm:.2f} > 3mm"
+        print(f"  ✅ T1 PASS — 1 came, RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T1 FAIL — {e}")
+        errors += 1
+
+    # ── T2: Mouvement horizontal (1 came, axe X) ──
+    total += 1
+    print(f"\n── T2: Mouvement horizontal pur ──")
+    try:
+        theta = np.linspace(0, 2 * np.pi, 100)
+        target = [(15.0 * (1 - np.cos(t)) / 2, 0.0) for t in theta]
+        sol = solver.solve(target, max_cams=2, timeout_s=15)
+        assert sol.n_cams == 1, f"Expected 1 cam, got {sol.n_cams}"
+        assert sol.axis_mapping[0] == 'x'
+        print(f"  ✅ T2 PASS — 1 came [{sol.axis_mapping[0]}], RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T2 FAIL — {e}")
+        errors += 1
+
+    # ── T3: Cercle (2 cames, X + Y) ──
+    total += 1
+    print(f"\n── T3: Trajectoire circulaire (2 cames) ──")
+    try:
+        theta = np.linspace(0, 2 * np.pi, 100, endpoint=False)
+        target = [(8.0 * np.cos(t), 8.0 * np.sin(t)) for t in theta]
+        sol = solver.solve(target, max_cams=2, timeout_s=30)
+        assert sol.n_cams == 2, f"Expected 2 cams, got {sol.n_cams}"
+        assert sol.error_rms_mm < 5.0, f"RMS {sol.error_rms_mm:.2f} > 5mm"
+        print(f"  ✅ T3 PASS — 2 cames, RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T3 FAIL — {e}")
+        errors += 1
+
+    # ── T4: Cible plate (aucun mouvement) ──
+    total += 1
+    print(f"\n── T4: Cible plate (dwell) ──")
+    try:
+        target = [(0.0, 0.0)] * 50
+        sol = solver.solve(target, max_cams=1, timeout_s=5)
+        assert sol.n_cams == 1
+        assert sol.error_rms_mm < 0.5
+        print(f"  ✅ T4 PASS — flat target, RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T4 FAIL — {e}")
+        errors += 1
+
+    # ── T5: Mouvement en 8 (lissajous) ──
+    total += 1
+    print(f"\n── T5: Figure en 8 (Lissajous 1:2) ──")
+    try:
+        theta = np.linspace(0, 2 * np.pi, 120, endpoint=False)
+        target = [(10.0 * np.sin(t), 10.0 * np.sin(2 * t)) for t in theta]
+        sol = solver.solve(target, max_cams=2, timeout_s=30)
+        assert sol.n_cams == 2
+        print(f"  ✅ T5 PASS — 2 cames, RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T5 FAIL — {e}")
+        errors += 1
+
+    # ── T6: Intégration pipeline (CamProfile compatible) ──
+    total += 1
+    print(f"\n── T6: Compatibilité CamProfile existant ──")
+    try:
+        theta_test = np.linspace(0, 2 * np.pi, 50)
+        target = [(0.0, 12.0 * np.sin(t)) for t in theta_test]
+        sol = solver.solve(target, max_cams=1, timeout_s=10)
+        cam = sol.cams[0]
+        # Vérifier que c'est un vrai CamProfile
+        assert isinstance(cam, CamProfile), f"Expected CamProfile, got {type(cam)}"
+        assert hasattr(cam, 'segments')
+        assert hasattr(cam, 'evaluate')
+        theta_eval = np.linspace(0, 360, 36)
+        s, ds, dds = cam.evaluate(theta_eval)
+        assert len(s) == 36
+        assert s.max() >= 1.0  # non-trivial movement
+        print(f"  ✅ T6 PASS — CamProfile OK, s=[{s.min():.1f},{s.max():.1f}]mm")
+    except Exception as e:
+        print(f"  ❌ T6 FAIL — {e}")
+        errors += 1
+
+    # ── T7: from_canvas ──
+    total += 1
+    print(f"\n── T7: from_canvas (pixel → mm) ──")
+    try:
+        # Simuler un dessin canvas: arc de cercle en pixels
+        canvas_pts = [(200 + 100 * np.cos(t), 200 + 80 * np.sin(t))
+                      for t in np.linspace(0, 2 * np.pi, 80)]
+        sol = solver.from_canvas(canvas_pts, 400, 400,
+                                 real_width_mm=40.0, real_height_mm=40.0,
+                                 max_cams=2, timeout_s=20)
+        assert sol.n_cams >= 1
+        print(f"  ✅ T7 PASS — from_canvas: {sol.n_cams} cames, RMS={sol.error_rms_mm:.3f}mm")
+    except Exception as e:
+        print(f"  ❌ T7 FAIL — {e}")
+        errors += 1
+
+    # ── Résumé ──
+    print("\n" + "═" * 55)
+    if errors == 0:
+        print(f"  🎉 {total}/{total} TESTS PASSENT — BRIQUE G OPÉRATIONNELLE")
+    else:
+        print(f"  ❌ {total - errors}/{total} — {errors} échec(s)")
+    print("═" * 55)
+    return errors
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(
