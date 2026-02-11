@@ -1932,6 +1932,13 @@ function buildMechanism3D(){
     mechGroup.add(sp);
   }
 
+  // Top plate / lid (semi-transparent, with follower slot indicators)
+  const lidGeo=new THREE.BoxGeometry(boxW,2,boxD);
+  const lidMat=new THREE.MeshPhongMaterial({color:0x8B7D6B,transparent:true,opacity:0.15,side:THREE.DoubleSide,depthWrite:false});
+  const lid=new THREE.Mesh(lidGeo,lidMat);
+  lid.position.set(0,boxH+1,0);
+  mechGroup.add(lid);
+
   // Crank or motor + GEARS
   const gearZ=-shLen/2-5;
   if(drive===0){
