@@ -118,7 +118,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1px 6px rgba(96,165,250,.3)}
 
 /* Phase selector */
-.phase-row{display:flex;gap:3px;padding:4px 10px 8px}
+.phase-row,.pivot-row{display:flex;gap:3px;padding:4px 10px 8px}
 .phase-btn{flex:1;padding:6px;border:1px solid var(--s3);background:var(--s2);border-radius:5px;font-size:.6rem;font-weight:700;color:var(--t3);cursor:pointer;text-align:center;font-family:'JetBrains Mono';transition:all .12s}
 .phase-btn.on{border-color:var(--blu);color:var(--blu);background:var(--blug)}
 
@@ -327,12 +327,12 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
 
   <!-- Pivot -->
   <div class="panel-h"><div class="dot-b"></div> PIVOT</div>
-  <div class="phase-row">
+  <div class="pivot-row">
     <div class="phase-btn" onclick="setPivot('top')">↑ Haut</div>
     <div class="phase-btn on" onclick="setPivot('center')">⊕ Centre</div>
     <div class="phase-btn" onclick="setPivot('bottom')">↓ Bas</div>
   </div>
-  <div class="phase-row" style="padding-top:0">
+  <div class="pivot-row" style="padding-top:0">
     <div class="phase-btn" onclick="setPivot('left')">← Gauche</div>
     <div class="phase-btn" onclick="setPivot('right')">→ Droite</div>
   </div>
@@ -1146,7 +1146,7 @@ function setProfile(prof){
   rebuildAll3D();
 }
 function setPivot(piv){
-  document.querySelectorAll('.pivot-row .phase-btn, .phase-row:last-of-type .phase-btn').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.pivot-row .phase-btn').forEach(b=>b.classList.remove('on'));
   if(event&&event.target) event.target.classList.add('on');
   if(motions){
     if(selectedPiece){
