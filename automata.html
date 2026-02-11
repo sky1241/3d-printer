@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>🔩 Automata Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;0,9..40,900;1,9..40,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#06060a;--s1:#0c0c14;--s2:#13131f;--s3:#1e1e32;--s4:#2a2a44;
+  --t1:#e8e6f0;--t2:#7a7894;--t3:#4a4866;
+  --ac:#ff6b35;--ac2:#ff8c5a;--acg:rgba(255,107,53,.08);
+  --ok:#34d399;--warn:#fbbf24;--err:#f87171;
+  --blu:#60a5fa;--blug:rgba(96,165,250,.08);
+  --r:12px
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+.mono{font-family:'JetBrains Mono',monospace}
+.wrap{max-width:540px;margin:0 auto;padding:12px 16px}
+
+/* ─── HEADER ─── */
+.hdr{display:flex;align-items:center;gap:12px;padding:20px 0 16px}
+.hdr-icon{width:44px;height:44px;background:var(--ac);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 4px 20px rgba(255,107,53,.25)}
+.hdr-txt h1{font-size:1.35rem;font-weight:900;letter-spacing:-.03em;line-height:1.1}
+.hdr-txt p{font-size:.68rem;color:var(--t2);margin-top:1px;letter-spacing:.02em}
+.badge{display:inline-flex;align-items:center;gap:3px;background:var(--ok);color:#000;padding:1px 6px;border-radius:4px;font-size:.55rem;font-weight:700;margin-left:6px;letter-spacing:.02em}
+.badge::before{content:'';width:5px;height:5px;background:#000;border-radius:50%}
+
+/* ─── DRIVE TOGGLE ─── */
+.drive-toggle{display:flex;gap:4px;background:var(--s1);border-radius:10px;padding:3px;margin-bottom:14px;position:relative}
+.drive-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 0;border:none;background:none;color:var(--t3);font-size:.74rem;font-weight:700;border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .18s;letter-spacing:.01em;position:relative;z-index:1}
+.drive-btn.on{color:var(--t1)}
+.drive-btn .ic{font-size:1.05rem}
+.drive-slider{position:absolute;top:3px;left:3px;width:calc(50% - 3px);height:calc(100% - 6px);background:var(--s3);border-radius:8px;transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:0}
+.drive-slider.right{transform:translateX(100%)}
+.drive-label{font-size:.6rem;color:var(--t3);text-align:center;margin-bottom:10px;letter-spacing:.02em}
+
+/* ─── TABS ─── */
+.tabs{display:flex;gap:2px;background:var(--s1);border-radius:10px;padding:2px;margin-bottom:14px}
+.tab-btn{flex:1;padding:9px 0;border:none;background:none;color:var(--t3);font-size:.72rem;font-weight:700;border-radius:8px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;letter-spacing:.01em}
+.tab-btn.on{background:var(--s3);color:var(--t1)}
+
+/* ─── SECTION ─── */
+.sec{margin-bottom:14px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sec-h h2{font-size:.78rem;font-weight:700;display:flex;align-items:center;gap:6px}
+.sec-h h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--ac)}
+.sec-h h2 .dot-b{width:6px;height:6px;border-radius:50%;background:var(--blu)}
+.sec-h .cnt{font-size:.62rem;color:var(--t3);font-family:'JetBrains Mono',monospace}
+
+/* ─── PRESET GRID ─── */
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.card{background:var(--s1);border:1.5px solid transparent;border-radius:var(--r);padding:12px;cursor:pointer;transition:all .12s;position:relative;overflow:hidden;-webkit-tap-highlight-color:transparent}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--ac),transparent);opacity:0;transition:opacity .2s}
+.card:active{transform:scale(.97)}
+.card.sel{border-color:var(--ac);background:var(--acg)}
+.card.sel::before{opacity:1}
+.card.mech{} 
+.card.mech.sel{border-color:var(--blu);background:var(--blug)}
+.card.mech.sel::before{background:linear-gradient(90deg,transparent,var(--blu),transparent);opacity:1}
+.card .top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.card .em{font-size:1.5rem;flex-shrink:0}
+.card .nm{font-weight:700;font-size:.82rem;line-height:1.2}
+.card .desc{font-size:.65rem;color:var(--t2);line-height:1.3}
+.card .tags{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.tag{font-size:.58rem;padding:2px 5px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-weight:700}
+.tag-p{background:rgba(255,107,53,.1);color:var(--ac)}
+.tag-c{background:rgba(52,211,153,.1);color:var(--ok)}
+.tag-m{background:rgba(96,165,250,.1);color:var(--blu)}
+
+/* ─── WIZARD (Custom) ─── */
+.wizard{display:none}
+.wizard.show{display:block}
+.w-label{font-size:.72rem;color:var(--t2);font-weight:500;margin-bottom:6px;display:block}
+.move-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:14px}
+.move-c{background:var(--s1);border:1.5px solid transparent;border-radius:8px;padding:8px 4px;cursor:pointer;text-align:center;font-size:.65rem;font-weight:600;transition:all .12s;color:var(--t2)}
+.move-c.sel{border-color:var(--ac);background:var(--acg);color:var(--t1)}
+.move-c .me{font-size:1.1rem;margin-bottom:2px}
+.range-row{margin-bottom:12px}
+.range-row .rh{display:flex;justify-content:space-between;font-size:.72rem;margin-bottom:3px}
+.range-row .rh span:first-child{color:var(--t2)}.range-row .rh .rv{color:var(--ac);font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.7rem}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(--s2);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;background:var(--ac);border-radius:50%;cursor:pointer;box-shadow:0 0 8px rgba(255,107,53,.3)}
+.sel-row{margin-bottom:12px}
+.sel-row select{width:100%;padding:9px 10px;background:var(--s1);border:1px solid var(--s3);border-radius:8px;color:var(--t1);font-size:.75rem;outline:none;font-family:'DM Sans',sans-serif}
+
+/* ─── CONFIG PANEL ─── */
+.cfg{background:var(--s1);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.cfg-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cfg-head h3{font-size:.75rem;font-weight:700;display:flex;align-items:center;gap:6px}
+.cfg-head .arr{color:var(--t3);font-size:.65rem;transition:transform .2s}
+.cfg.open .arr{transform:rotate(90deg)}
+.cfg-body{display:none;padding:0 12px 12px}
+.cfg.open .cfg-body{display:block}
+.ch-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:10px}
+.ch-c{background:var(--s2);border:1.5px solid transparent;border-radius:6px;padding:6px 2px;cursor:pointer;text-align:center;font-size:.6rem;font-weight:600;transition:all .12s;color:var(--t2)}
+.ch-c.sel{border-color:var(--ac);background:var(--acg);color:var(--t1)}
+.ch-c .che{font-size:.9rem;margin-bottom:1px}
+
+/* ─── GO BUTTON ─── */
+.go-zone{position:sticky;bottom:0;padding:6px 0 10px;background:linear-gradient(transparent,var(--bg) 30%);z-index:10}
+.go{width:100%;padding:15px;border:none;border-radius:var(--r);font-size:.92rem;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;letter-spacing:.01em;position:relative;overflow:hidden}
+.go.off{background:var(--s2);color:var(--t3);pointer-events:none}
+.go.rdy{background:var(--ac);color:#fff;box-shadow:0 4px 24px rgba(255,107,53,.3)}
+.go.rdy:active{transform:scale(.97);box-shadow:0 2px 12px rgba(255,107,53,.2)}
+
+/* ─── LOADING ─── */
+.page{display:none}.page.vis{display:block;animation:fadeUp .25s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.load-zone{display:flex;flex-direction:column;align-items:center;padding:50px 0;gap:20px}
+.spinner{width:48px;height:48px;border:2.5px solid var(--s3);border-top-color:var(--ac);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-txt{color:var(--t2);font-size:.8rem;font-weight:500}
+.steps{display:flex;flex-direction:column;gap:6px;width:220px}
+.step{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--t3);transition:all .25s}
+.step.on{color:var(--t1)}.step.ok{color:var(--ok)}
+.step-dot{width:6px;height:6px;border-radius:50%;background:var(--s4);flex-shrink:0;transition:all .25s}
+.step.on .step-dot{background:var(--ac);box-shadow:0 0 8px rgba(255,107,53,.5)}.step.ok .step-dot{background:var(--ok)}
+
+/* ─── RESULT ─── */
+.res-top{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.res-em{font-size:2rem}
+.res-info h2{font-size:1.2rem;font-weight:900;line-height:1.1}
+.res-info p{font-size:.7rem;color:var(--t2);margin-top:1px}
+.drive-badge{display:inline-flex;align-items:center;gap:3px;font-size:.55rem;font-weight:700;padding:1px 6px;border-radius:4px;margin-top:3px}
+.drive-badge.motor{background:rgba(255,107,53,.12);color:var(--ac)}
+.drive-badge.crank{background:rgba(96,165,250,.12);color:var(--blu)}
+
+/* ─── 3D CANVAS ─── */
+.cv-wrap{position:relative;background:var(--s1);border-radius:var(--r);overflow:hidden;margin-bottom:12px;aspect-ratio:4/3;border:1px solid var(--s3)}
+.cv-wrap canvas{display:block;width:100%;height:100%}
+.cv-tag{position:absolute;font-size:.6rem;font-family:'JetBrains Mono',monospace;font-weight:700;padding:2px 6px;border-radius:4px}
+.cv-tag.rt{bottom:8px;right:8px;background:rgba(255,107,53,.15);color:var(--ac)}
+.cv-tag.lt{bottom:8px;left:8px;background:rgba(52,211,153,.12);color:var(--ok)}
+.cv-tag.tp{top:8px;right:8px;color:var(--t3);font-size:.55rem}
+
+/* ─── STATS ─── */
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-bottom:12px}
+.stat{background:var(--s1);border-radius:8px;padding:10px}
+.stat .sk{font-size:.6rem;color:var(--t2);margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em}
+.stat .sv{font-size:.88rem;font-weight:800}
+.stat .sv.g{color:var(--ok)}.stat .sv.a{color:var(--ac)}.stat .sv.b{color:var(--blu)}
+
+/* ─── TECH ─── */
+.tech-bar{background:var(--s1);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.tech-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer}
+.tech-head h3{font-size:.72rem;font-weight:700;color:var(--t2)}
+.tech-head .arr{color:var(--t3);font-size:.6rem;transition:transform .2s}
+.tech-bar.open .arr{transform:rotate(90deg)}
+.tech-body{display:none;padding:0 12px 10px;font-size:.62rem;color:var(--t3);line-height:1.8}
+.tech-bar.open .tech-body{display:block}
+.tech-body b{color:var(--t2)}
+
+.btn-back{width:100%;padding:13px;border:1.5px solid var(--s3);background:transparent;border-radius:var(--r);color:var(--t1);font-size:.82rem;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s}
+.btn-back:active{background:var(--s2)}
+
+/* ─── SEPARATOR ─── */
+.sep{height:1px;background:var(--s3);margin:16px 0 14px;opacity:.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ════ PAGE 1: BUILD ════ -->
+<div class="page vis" id="p1">
+  <div class="hdr">
+    <div class="hdr-icon">🔩</div>
+    <div class="hdr-txt">
+      <h1>Automata Generator<span class="badge">94 TESTS OK</span></h1>
+      <p>Automates mécaniques · 16 243 lignes · Bambu X1C</p>
+    </div>
+  </div>
+
+  <!-- DRIVE TOGGLE -->
+  <div class="drive-toggle" id="driveToggle">
+    <div class="drive-slider" id="driveSlider"></div>
+    <button class="drive-btn on" onclick="setDrive(0)"><span class="ic">🖐️</span> Manivelle</button>
+    <button class="drive-btn" onclick="setDrive(1)"><span class="ic">⚡</span> Moteur</button>
+  </div>
+  <div class="drive-label" id="driveLabel">Manuel — rotation à la main, pas d'électronique</div>
+
+  <div class="tabs">
+    <button class="tab-btn on" onclick="setTab(0)">Presets</button>
+    <button class="tab-btn" onclick="setTab(1)">Custom</button>
+  </div>
+
+  <!-- PRESETS -->
+  <div id="tab0">
+    <!-- Figurines -->
+    <div class="sec">
+      <div class="sec-h"><h2><span class="dot"></span>Figurines animées</h2><span class="cnt mono" id="figCnt"></span></div>
+      <div class="grid" id="figGrid"></div>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Mouvements mécaniques -->
+    <div class="sec">
+      <div class="sec-h"><h2><span class="dot-b"></span>Mouvements mécaniques</h2><span class="cnt mono" id="mechCnt"></span></div>
+      <div class="grid" id="mechGrid"></div>
+    </div>
+  </div>
+
+  <!-- CUSTOM -->
+  <div id="tab1" style="display:none">
+    <div class="wizard show">
+      <span class="w-label">Type de mouvement</span>
+      <div class="move-grid" id="mgrid"></div>
+      <div class="range-row"><div class="rh"><span>Axes</span><span class="rv" id="axV">1</span></div><input type="range" min="1" max="4" value="1" oninput="W.axes=+this.value;$('axV').textContent=this.value"></div>
+      <div class="range-row"><div class="rh"><span>Amplitude</span><span class="rv" id="amV">10mm</span></div><input type="range" min="3" max="30" value="10" oninput="W.amp=+this.value;$('amV').textContent=this.value+'mm'"></div>
+      <div class="range-row"><div class="rh"><span>Vitesse</span><span class="rv" id="rpV">2.0 RPM</span></div><input type="range" min="5" max="50" value="20" oninput="W.rpm=(+this.value/10);$('rpV').textContent=W.rpm.toFixed(1)+' RPM'"></div>
+      <div class="sel-row"><span class="w-label">Loi de mouvement</span><select onchange="W.law=this.value"><option value="cycloidal">Cycloïdal — fluide, zéro à-coup</option><option value="harmonic">Harmonique — doux, sinusoïdal</option><option value="poly345">Poly 3-4-5 — précis, industriel</option><option value="poly4567">Poly 4-5-6-7 — premium</option></select></div>
+    </div>
+  </div>
+
+  <!-- CHASSIS CONFIG -->
+  <div class="cfg" id="cfgBox">
+    <div class="cfg-head" onclick="toggleCfg()"><h3>⚙️ Châssis & dimensions</h3><span class="arr">▸</span></div>
+    <div class="cfg-body">
+      <div class="ch-grid" id="chGrid"></div>
+      <div class="range-row"><div class="rh"><span>Largeur</span><span class="rv" id="wV">80mm</span></div><input type="range" min="40" max="150" value="80" oninput="C.w=+this.value;$('wV').textContent=this.value+'mm'"></div>
+      <div class="range-row"><div class="rh"><span>Profondeur</span><span class="rv" id="dV">60mm</span></div><input type="range" min="30" max="120" value="60" oninput="C.d=+this.value;$('dV').textContent=this.value+'mm'"></div>
+      <div class="range-row"><div class="rh"><span>Hauteur</span><span class="rv" id="hV">80mm</span></div><input type="range" min="40" max="200" value="80" oninput="C.h=+this.value;$('hV').textContent=this.value+'mm'"></div>
+    </div>
+  </div>
+
+  <div class="go-zone">
+    <button class="go off" id="goBtn" onclick="generate()">Choisis un automate ↑</button>
+  </div>
+</div>
+
+<!-- ════ PAGE 2: LOADING ════ -->
+<div class="page" id="p2">
+  <div class="hdr"><div class="hdr-icon">🔩</div><div class="hdr-txt"><h1>Automata Generator</h1></div></div>
+  <div class="load-zone"><div class="spinner"></div><p class="load-txt" id="ltxt">Génération...</p><div class="steps" id="lsteps"></div></div>
+</div>
+
+<!-- ════ PAGE 3: RESULT ════ -->
+<div class="page" id="p3">
+  <div class="hdr"><div class="hdr-icon">🔩</div><div class="hdr-txt"><h1>Automata Generator</h1></div></div>
+  <div class="res-top"><span class="res-em" id="rE"></span><div class="res-info"><h2 id="rN"></h2><p id="rD"></p><div id="rDrive"></div></div></div>
+  <div class="cv-wrap"><canvas id="c3d"></canvas><div class="cv-tag rt" id="cTag"></div><div class="cv-tag lt">✓ FDM validé</div><div class="cv-tag tp mono">ROTATION 3D</div></div>
+  <div class="stat-grid" id="sGrid"></div>
+  <div class="tech-bar" id="techBox">
+    <div class="tech-head" onclick="toggleTech()"><h3>⚙️ Sous le capot</h3><span class="arr">▸</span></div>
+    <div class="tech-body"><b>16 243 lignes</b> Python · <b>7 briques</b> (A→G) · Moteur de cames paramétrique · Constraint engine <b>94 checks</b> (B1→B9) · Solveur inverse (differential evolution + L-BFGS-B) · <b>22 presets</b> · Parser FR/EN · Export STL + BOM + timing · Optimisé <b>Bambu Lab X1C</b> 256³mm · 0 crash</div>
+  </div>
+  <button class="btn-back" onclick="goBack()">← Choisir un autre</button>
+</div>
+
+</div>
+<script>
+const $=id=>document.getElementById(id);
+
+// ════ DATA ════
+const FIGURINES=[
+  {id:"nodding_bird",e:"🐦",n:"Oiseau",d:"Tête qui hoche — mouvement vertical",p:17,g:79,c:1,t:7,dim:"80×78×75"},
+  {id:"flapping_bird",e:"🦅",n:"Aigle",d:"Ailes qui battent — 3 cames synchronisées",p:22,g:613,c:3,t:9,dim:"236×235×77"},
+  {id:"walking_figure",e:"🚶",n:"Marcheur",d:"Jambes alternées — gait pattern 4 cames",p:24,g:102,c:4,t:10,dim:"80×61×50"},
+  {id:"bobbing_duck",e:"🦆",n:"Canard",d:"Plonge et remonte — came harmonique",p:16,g:94,c:1,t:6,dim:"80×64×50"},
+  {id:"rocking_horse",e:"🐴",n:"Cheval",d:"Bascule douce — 2 cames déphasées",p:22,g:87,c:2,t:8,dim:"80×60×50"},
+  {id:"pecking_chicken",e:"🐔",n:"Poule",d:"Picore le sol — corps + tête",p:20,g:134,c:2,t:7,dim:"121×134×50"},
+  {id:"waving_cat",e:"🐱",n:"Chat",d:"Patte qui salue — maneki-neko",p:18,g:152,c:1,t:6,dim:"157×146×50"},
+  {id:"drummer",e:"🥁",n:"Batteur",d:"Frappe alternée — 2 bras déphasés 180°",p:21,g:225,c:2,t:8,dim:"161×132×50"},
+  {id:"blacksmith",e:"⚒️",n:"Forgeron",d:"Marteau sur enclume — came asymétrique",p:17,g:268,c:1,t:7,dim:"237×250×50"},
+  {id:"swimming_fish",e:"🐟",n:"Poisson",d:"Queue ondulante — nage fluide",p:18,g:88,c:1,t:6,dim:"80×60×73"},
+];
+
+const MECHS=[
+  {id:"slider",e:"↔️",n:"Glissière",d:"Translation linéaire — mouvement aller-retour",p:12,g:45,c:1,t:4,dim:"80×50×40",type:"slider"},
+  {id:"rocker",e:"🔄",n:"Bascule",d:"Rotation oscillante — balancier",p:14,g:52,c:1,t:5,dim:"80×55×45",type:"rocker"},
+  {id:"turntable",e:"⏱️",n:"Genève",d:"Plateau tournant — avance par pas",p:16,g:68,c:1,t:6,dim:"90×90×40",type:"turntable"},
+  {id:"sequence",e:"🎵",n:"Séquence",d:"Multi-étapes — enchaînement programmé",p:20,g:78,c:3,t:7,dim:"100×60×50",type:"sequence"},
+  {id:"striker",e:"🔨",n:"Percuteur",d:"Frappe rapide — came à retour brusque",p:15,g:55,c:1,t:5,dim:"80×55×50",type:"striker"},
+  {id:"holder",e:"✋",n:"Maintien",d:"Blocage en position — came à palier",p:13,g:48,c:1,t:4,dim:"80×50×40",type:"holder"},
+  {id:"multi_axis",e:"🎯",n:"Multi-axes",d:"2-4 axes combinés — chorégraphie complexe",p:26,g:120,c:4,t:10,dim:"120×80×60",type:"multi_axis"},
+];
+
+const MOVES=[{e:"↕️",n:"Hochement"},{e:"🌊",n:"Vague"},{e:"↔️",n:"Glissière"},{e:"🦅",n:"Battement"},{e:"🔨",n:"Frappe"},{e:"⏱️",n:"Genève"},{e:"✋",n:"Maintien"}];
+const CH=[{id:"box",e:"📦",n:"Boîte"},{id:"frame",e:"🏗️",n:"Cadre"},{id:"central",e:"🗼",n:"Central"},{id:"flat",e:"📋",n:"Plat"}];
+
+let sel=null,selType=null,tab=0,anim=null,drive=0; // 0=manivelle, 1=moteur
+let W={move:0,axes:1,amp:10,rpm:2,law:"cycloidal"};
+let C={type:"box",w:80,d:60,h:80};
+
+// ════ DRIVE TOGGLE ════
+function setDrive(d){
+  drive=d;
+  const btns=document.querySelectorAll('.drive-btn');
+  btns.forEach((b,i)=>b.classList.toggle('on',i===d));
+  $('driveSlider').className='drive-slider'+(d===1?' right':'');
+  $('driveLabel').textContent=d===0
+    ?'Manuel — rotation à la main, pas d\'électronique'
+    :'Motorisé — moteur DC/servo, vitesse régulée';
+  updBtn();
+}
+
+// ════ BUILD CARDS ════
+function buildCard(p,idx,type,container){
+  const d=document.createElement("div");
+  d.className="card"+(type==='mech'?' mech':'');
+  const tagClass=type==='mech'?'tag-m':'tag-c';
+  d.innerHTML=`<div class="top"><span class="em">${p.e}</span><span class="nm">${p.n}</span></div><div class="desc">${p.d}</div><div class="tags"><span class="tag tag-p">${p.p} pièces</span><span class="tag ${tagClass}">${p.c} came${p.c>1?"s":""}</span></div>`;
+  d.onclick=()=>{
+    sel=idx;selType=type;
+    document.querySelectorAll(".card").forEach(c=>c.classList.remove("sel"));
+    d.classList.add("sel");
+    updBtn();
+  };
+  container.appendChild(d);
+}
+
+FIGURINES.forEach((p,i)=>buildCard(p,i,'fig',$("figGrid")));
+MECHS.forEach((p,i)=>buildCard(p,i,'mech',$("mechGrid")));
+$("figCnt").textContent=FIGURINES.length+" figurines";
+$("mechCnt").textContent=MECHS.length+" mouvements";
+
+// Build move grid
+MOVES.forEach((m,i)=>{const d=document.createElement("div");d.className="move-c"+(i===0?" sel":"");d.innerHTML=`<div class="me">${m.e}</div>${m.n}`;d.onclick=()=>{W.move=i;document.querySelectorAll(".move-c").forEach((c,j)=>c.classList.toggle("sel",j===i));updBtn()};$("mgrid").appendChild(d)});
+
+// Build chassis grid
+CH.forEach((c,i)=>{const d=document.createElement("div");d.className="ch-c"+(i===0?" sel":"");d.dataset.id=c.id;d.innerHTML=`<div class="che">${c.e}</div>${c.n}`;d.onclick=()=>{C.type=c.id;document.querySelectorAll(".ch-c").forEach(x=>x.classList.toggle("sel",x.dataset.id===c.id))};$("chGrid").appendChild(d)});
+
+// ════ UI ════
+function setTab(t){tab=t;document.querySelectorAll(".tab-btn").forEach((b,i)=>b.classList.toggle("on",i===t));$("tab0").style.display=t===0?"block":"none";$("tab1").style.display=t===1?"block":"none";updBtn()}
+
+function updBtn(){
+  const b=$("goBtn");
+  const drv=drive===0?'🖐️':'⚡';
+  if(tab===0&&sel!==null){
+    const list=selType==='fig'?FIGURINES:MECHS;
+    b.className="go rdy";
+    b.textContent=`Générer ${list[sel].n} ${drv}`;
+  }else if(tab===1){
+    b.className="go rdy";
+    b.textContent=`Générer Custom ${drv}`;
+  }else{
+    b.className="go off";
+    b.textContent="Choisis un automate ↑";
+  }
+}
+
+function toggleCfg(){$("cfgBox").classList.toggle("open")}
+function toggleTech(){$("techBox").classList.toggle("open")}
+function showPage(n){["p1","p2","p3"].forEach((id,i)=>{$(id).classList.toggle("vis",i===n)});window.scrollTo(0,0)}
+
+async function generate(){
+  showPage(1);
+  const baseSteps=["Validation scène","Compilation cames","Optimisation phases","Calcul couples","Géométrie 3D","Validation FDM","Export STL"];
+  const steps=drive===1?[...baseSteps.slice(0,4),"Dimensionnement moteur",...baseSteps.slice(4)]:baseSteps;
+  $("lsteps").innerHTML=steps.map(s=>`<div class="step"><div class="step-dot"></div>${s}</div>`).join("");
+  const ls=$("lsteps").querySelectorAll(".step");
+  for(let i=0;i<steps.length;i++){ls[i].className="step on";$("ltxt").textContent=steps[i]+"...";await new Promise(r=>setTimeout(r,180+Math.random()*300));ls[i].className="step ok"}
+  await new Promise(r=>setTimeout(r,200));
+
+  let d;
+  if(tab===0&&sel!==null){
+    const list=selType==='fig'?FIGURINES:MECHS;
+    d={...list[sel]};
+  }else{
+    d={e:"🛠️",n:"Custom",d:MOVES[W.move].n+` · ${W.axes} axe(s) · ${W.amp}mm`,p:8+W.axes*5,g:Math.round(60+W.amp*W.axes*3),c:W.axes,t:Math.round(5+W.axes*2),dim:`${C.w}×${C.d}×${C.h}`};
+  }
+  // Adjust for motor
+  if(drive===1){d.p+=2;d.g+=15;d.t+=1}
+  showResult(d);
+}
+
+function showResult(d){
+  showPage(2);
+  $("rE").textContent=d.e;
+  $("rN").textContent=d.n;
+  $("rD").textContent=d.d;
+  $("rDrive").innerHTML=drive===0
+    ?'<div class="drive-badge crank">🖐️ Manivelle</div>'
+    :'<div class="drive-badge motor">⚡ Moteur DC</div>';
+  $("cTag").textContent=`${d.p}p · ${d.c} came${d.c>1?"s":""}`;
+
+  const driveStr=drive===0?"Manivelle":"Moteur DC";
+  const stats=[
+    {k:"PIÈCES STL",v:d.p,c:"a"},{k:"CAMES",v:d.c,c:"a"},
+    {k:"PLA",v:d.g+"g",c:""},{k:"IMPRESSION",v:"~"+d.t+"h",c:""},
+    {k:"DIMENSIONS",v:d.dim||`${C.w}×${C.d}×${C.h}`,c:""},{k:"ENTRAÎNEMENT",v:driveStr,c:drive===0?"b":"a"},
+    {k:"VALIDATION FDM",v:`${d.p}/${d.p} ✓`,c:"g"},{k:"IMPRIMANTE",v:"X1C ✓",c:"g"},
+  ];
+  $("sGrid").innerHTML=stats.map(s=>`<div class="stat"><div class="sk">${s.k}</div><div class="sv${s.c?" "+s.c:""}">${s.v}</div></div>`).join("");
+  render3D(d);
+}
+
+/* ═══════════════════════════════════════════
+   3D RENDERER
+   ═══════════════════════════════════════════ */
+function render3D(p){
+  const cv=$("c3d");const dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=cv.offsetWidth*dpr;cv.height=cv.offsetHeight*dpr;
+  const ctx=cv.getContext("2d");const w=cv.width,h=cv.height;let f=0;
+
+  function draw(){
+    f++;ctx.clearRect(0,0,w,h);
+    const bg=ctx.createRadialGradient(w/2,h*.52,0,w/2,h*.52,w*.65);
+    bg.addColorStop(0,"#0f0f1a");bg.addColorStop(1,"#06060a");
+    ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+
+    const cx=w/2,cy=h*.54,sc=w/420,rot=f*.005,cr=Math.cos(rot),sr=Math.sin(rot);
+    const proj=(x,y,z)=>[cx+(x*cr-y*sr*.55)*sc, cy+(-z*.82+x*sr*.32+y*cr*.32)*sc];
+
+    // Grid
+    ctx.globalAlpha=.15;ctx.strokeStyle="#ff6b35";ctx.lineWidth=.4*sc;
+    for(let i=-7;i<=7;i++){
+      let[x1,y1]=proj(i*18,-140,0),[x2,y2]=proj(i*18,140,0);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+      [x1,y1]=proj(-140,i*18,0);[x2,y2]=proj(140,i*18,0);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()
+    }
+    ctx.globalAlpha=1;
+
+    const bw=C.w*.6,bd=C.d*.6,bh=C.h*.55;
+    // Box faces
+    const bx=[[-bw/2,-bd/2,0],[bw/2,-bd/2,0],[bw/2,bd/2,0],[-bw/2,bd/2,0],[-bw/2,-bd/2,bh],[bw/2,-bd/2,bh],[bw/2,bd/2,bh],[-bw/2,bd/2,bh]].map(c=>proj(...c));
+    const faces=[[0,1,5,4,"rgba(255,107,53,.04)"],[1,2,6,5,"rgba(255,107,53,.025)"],[2,3,7,6,"rgba(255,107,53,.02)"],[4,5,6,7,"rgba(255,107,53,.06)"]];
+    faces.forEach(([a,b,c,d,col])=>{ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(bx[a][0],bx[a][1]);ctx.lineTo(bx[b][0],bx[b][1]);ctx.lineTo(bx[c][0],bx[c][1]);ctx.lineTo(bx[d][0],bx[d][1]);ctx.closePath();ctx.fill()});
+    ctx.strokeStyle="rgba(255,107,53,.35)";ctx.lineWidth=1.5*sc;
+    [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(bx[a][0],bx[a][1]);ctx.lineTo(bx[b][0],bx[b][1]);ctx.stroke()});
+    // Panel lines
+    ctx.strokeStyle="rgba(255,107,53,.08)";ctx.lineWidth=.6*sc;
+    for(let i=1;i<5;i++){const t=i/5;let[x1,y1]=proj(-bw/2,-bd/2,bh*t),[x2,y2]=proj(bw/2,-bd/2,bh*t);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();[x1,y1]=proj(bw/2,-bd/2,bh*t);[x2,y2]=proj(bw/2,bd/2,bh*t);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
+
+    // Shaft
+    const sz=bh*.5,sl=bd*.85;
+    let[s1x,s1y]=proj(0,-sl,sz),[s2x,s2y]=proj(0,sl,sz);
+    ctx.strokeStyle="rgba(255,255,255,.18)";ctx.lineWidth=3*sc;ctx.beginPath();ctx.moveTo(s1x,s1y);ctx.lineTo(s2x,s2y);ctx.stroke();
+    [[-sl],[sl]].forEach(([sy])=>{let[bxx,by]=proj(0,sy,sz);ctx.fillStyle="rgba(255,107,53,.12)";ctx.strokeStyle="rgba(255,107,53,.3)";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(bxx,by,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke()});
+
+    // Cams
+    const camC=["#ff6b35","#ff8c5a","#ffad85","#ffd0b5"];
+    for(let ci=0;ci<Math.min(p.c,4);ci++){
+      const ca=f*.018+ci*Math.PI*.65,sp=Math.min(p.c,4),off=(ci-(sp-1)/2)*(bd*.4/Math.max(sp-1,1)),br=26-ci*2;
+      let[ccx,ccy]=proj(0,off,sz);
+      ctx.strokeStyle=camC[ci];ctx.lineWidth=2.5*sc;ctx.shadowColor=camC[ci];ctx.shadowBlur=12*sc;
+      ctx.beginPath();
+      for(let i=0;i<=72;i++){const a=(i/72)*Math.PI*2;const r=(br+9*Math.sin(a*2+ca)+4*Math.sin(a*3+ca*1.3)+2.5*Math.cos(a*5+ca*.7))*sc;const px=ccx+r*Math.cos(a)*cr*.65;const py=ccy+r*Math.sin(a)*.52;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py)}
+      ctx.closePath();ctx.stroke();ctx.shadowBlur=0;
+      ctx.fillStyle=camC[ci]+"10";ctx.fill();
+      ctx.fillStyle=camC[ci]+"40";ctx.beginPath();ctx.arc(ccx,ccy,3.5*sc,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle=camC[ci]+"50";ctx.lineWidth=1*sc;ctx.beginPath();ctx.moveTo(ccx-2*sc,ccy-3*sc);ctx.lineTo(ccx-2*sc,ccy+3*sc);ctx.stroke();
+
+      // Follower
+      const cd=9*Math.sin(ca)+4*Math.sin(ca*1.3);const ftZ=sz+br+cd+16;
+      let[ftx,fty]=proj(0,off,ftZ),[fbx,fby]=proj(0,off,sz+br+1);
+      ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;ctx.beginPath();ctx.moveTo(fbx,fby);ctx.lineTo(ftx,fty);ctx.stroke();
+      ctx.fillStyle="rgba(251,191,36,.2)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(fbx,fby,3.5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+      // Figurine
+      const fZ=ftZ+6,bob=cd*.5;let[px,py]=proj(0,off,fZ+bob);
+      ctx.fillStyle="#fbbf24";ctx.shadowColor="#fbbf24";ctx.shadowBlur=6*sc;
+      ctx.beginPath();ctx.arc(px,py-10*sc,5.5*sc,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      ctx.strokeStyle="rgba(251,191,36,.45)";ctx.lineWidth=1.8*sc;
+      ctx.beginPath();ctx.moveTo(px,py-4*sc);ctx.lineTo(px,py+15*sc);ctx.stroke();
+      const arm=Math.sin(f*.022+ci)*.35;
+      ctx.beginPath();ctx.moveTo(px-11*sc*Math.cos(arm),py+1*sc-7*sc*Math.sin(arm));ctx.lineTo(px,py+1*sc);ctx.lineTo(px+11*sc*Math.cos(-arm),py+1*sc+7*sc*Math.sin(arm));ctx.stroke();
+      ctx.beginPath();ctx.moveTo(px,py+15*sc);ctx.lineTo(px-5*sc,py+26*sc);ctx.moveTo(px,py+15*sc);ctx.lineTo(px+5*sc,py+26*sc);ctx.stroke()
+    }
+
+    // Motor OR Crank based on drive mode
+    if(drive===1){
+      // Motor
+      let[mx,my]=proj(bw/2+14,-bd/2+8,bh*.18);
+      ctx.fillStyle="rgba(255,107,53,.08)";ctx.strokeStyle="rgba(255,107,53,.25)";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(mx,my,9*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="rgba(255,107,53,.3)";ctx.font=`bold ${9*sc}px 'DM Sans',sans-serif`;ctx.textAlign="center";ctx.fillText("M",mx,my+3.5*sc);
+      // Belt
+      let[dx,dy]=proj(bw/2+5,-bd/2+8,sz);ctx.strokeStyle="rgba(255,107,53,.1)";ctx.lineWidth=1*sc;ctx.setLineDash([3*sc,3*sc]);ctx.beginPath();ctx.moveTo(mx,my-9*sc);ctx.lineTo(dx,dy);ctx.stroke();ctx.setLineDash([]);
+    }else{
+      // Crank handle
+      const cA=f*.018;let[hx,hy]=proj(0,-sl-14,sz);
+      // Arm
+      ctx.strokeStyle="rgba(96,165,250,.35)";ctx.lineWidth=2.5*sc;ctx.beginPath();ctx.moveTo(hx,hy);
+      const hLen=18;
+      const hEx=hx+hLen*sc*Math.cos(cA),hEy=hy+hLen*sc*Math.sin(cA);
+      ctx.lineTo(hEx,hEy);ctx.stroke();
+      // Knob
+      ctx.fillStyle="rgba(96,165,250,.15)";ctx.strokeStyle="rgba(96,165,250,.4)";ctx.lineWidth=1.5*sc;
+      ctx.beginPath();ctx.arc(hEx,hEy,4.5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Hub
+      ctx.fillStyle="rgba(96,165,250,.1)";ctx.beginPath();ctx.arc(hx,hy,5*sc,0,Math.PI*2);ctx.fill();
+    }
+
+    // Screws
+    ctx.fillStyle="rgba(255,107,53,.1)";
+    [[-bw/2+4,-bd/2+4],[bw/2-4,-bd/2+4],[-bw/2+4,bd/2-4],[bw/2-4,bd/2-4]].forEach(([sx,sy])=>{let[px2,py2]=proj(sx,sy,0);ctx.beginPath();ctx.arc(px2,py2,2*sc,0,Math.PI*2);ctx.fill()});
+
+    anim=requestAnimationFrame(draw)
+  }
+  if(anim)cancelAnimationFrame(anim);draw()
+}
+
+function goBack(){if(anim)cancelAnimationFrame(anim);showPage(0)}
+</script>
+</body>
+</html>
