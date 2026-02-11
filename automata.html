@@ -1251,7 +1251,7 @@ function buildSTL(triangles){
   return new Blob([buf],{type:'application/octet-stream'});
 }
 function realCamRadiusSTL(angle,camData){
-  const baseR=camData.base_radius_mm||4;
+  const baseR=camData.base_radius_mm||8;
   const lift=camData.lift_mm||5;
   const theta=((angle)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
   let d=0;
@@ -1287,9 +1287,9 @@ function doGenerate(){
     const prof=pieces.length>0?pieces[0].cam_profile:'smooth';
     const mot=pieces.length>0?pieces[0].motion:'OSCILLATE';
     let lift;
-    if(mot==='ROTATE') lift=3;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.4;else lift=15*Math.sin(maxAmp*Math.PI/180);
-    lift=Math.max(2,Math.min(lift,8));
-    const camD={base_radius_mm:4,lift_mm:lift,profile:prof};
+    if(mot==='ROTATE') lift=5;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.5;else lift=15*Math.sin(maxAmp*Math.PI/180);
+    lift=Math.max(4,Math.min(lift,12));
+    const camD={base_radius_mm:8,lift_mm:lift,profile:prof};
     const yPos=(ci-(nCams-1)/2)*(shaftLen*0.6/Math.max(nCams-1,1));
     const thick=4,y1=yPos-thick/2,y2=yPos+thick/2;
     const pts=[];
@@ -1309,7 +1309,7 @@ function doGenerate(){
   const fSegs=12;
   for(let ci=0;ci<nCams;ci++){
     const cp=camPositions[ci];
-    const maxR=4+cp.lift;
+    const maxR=8+cp.lift;
     const fLen=boxH-shaftZ+5; // extends above box
     const fBottom=shaftZ+maxR;
     const fTop=fBottom+fLen;
@@ -1332,7 +1332,7 @@ function doGenerate(){
   const tW=12,tH=1.5,tD=3;
   for(let ci=0;ci<nCams;ci++){
     const cp=camPositions[ci];
-    const maxR=4+cp.lift;
+    const maxR=8+cp.lift;
     const tZ=shaftZ+maxR+(boxH-shaftZ+5); // top of follower
     const htw=tW/2,hth=tH/2,htd=tD/2;
     const y1=cp.yPos-htd,y2=cp.yPos+htd;
