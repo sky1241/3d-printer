@@ -1081,6 +1081,22 @@ function selectPiece(id){
       document.querySelectorAll('.phase-row .phase-btn').forEach(b=>{
         if(b.textContent===m.phase+'°') b.classList.add('on');
       });
+
+      // Sync pivot
+      document.querySelectorAll('.pivot-row .phase-btn').forEach(b=>b.classList.remove('on'));
+      const pivotLabels={top:'↑ Haut',center:'⊕ Centre',bottom:'↓ Bas',left:'← Gauche',right:'→ Droite'};
+      const pivLabel=pivotLabels[m.pivot||'center'];
+      document.querySelectorAll('.pivot-row .phase-btn').forEach(b=>{
+        if(b.textContent===pivLabel) b.classList.add('on');
+      });
+    }
+
+    // Sync size
+    const p=figurine.pieces.find(pp=>pp.id===selectedPiece);
+    if(p){
+      const sz=Math.round((p._scale||1)*100);
+      document.getElementById('slSize').value=sz;
+      document.getElementById('valSize').textContent=sz+'%';
     }
   }
   highlightSelected3D();
