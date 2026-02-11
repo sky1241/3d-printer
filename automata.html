@@ -1284,9 +1284,9 @@ function doGenerate(){
     const prof=pieces.length>0?pieces[0].cam_profile:'smooth';
     const mot=pieces.length>0?pieces[0].motion:'OSCILLATE';
     let lift;
-    if(mot==='ROTATE') lift=3;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.4;else lift=15*Math.sin(maxAmp*Math.PI/180);
-    lift=Math.max(2,Math.min(lift,8));
-    const camD={base_radius_mm:4,lift_mm:lift,profile:prof};
+    if(mot==='ROTATE') lift=5;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.5;else lift=15*Math.sin(maxAmp*Math.PI/180);
+    lift=Math.max(4,Math.min(lift,12));
+    const camD={base_radius_mm:8,lift_mm:lift,profile:prof};
     const yPos=(ci-(nCams-1)/2)*(shaftLen*0.6/Math.max(nCams-1,1));
     const thick=4,y1=yPos-thick/2,y2=yPos+thick/2;
     const pts=[];
