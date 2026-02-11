@@ -1122,6 +1122,7 @@ function startRenderer(){
     }
 
     // 2D Grid for figurine area
+    const mechY=h*0.72;
     ctx.globalAlpha=0.04;ctx.strokeStyle='#60a5fa';ctx.lineWidth=0.5;
     for(let gx=-8;gx<=8;gx++){
       const x=w/2+gx*30*zoom;
@@ -1157,7 +1158,7 @@ function startRenderer(){
     const sortedPieces=[...figurine.pieces].sort((a,b)=>(a.layer||0)-(b.layer||0));
 
     // Separator
-    const mechY=h*0.72;
+    // Separator
     ctx.strokeStyle='rgba(255,255,255,.04)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(40,mechY-16);ctx.lineTo(w-40,mechY-16);ctx.stroke();
     ctx.fillStyle='rgba(255,255,255,.06)';ctx.font='600 7px DM Sans';ctx.textAlign='center';
