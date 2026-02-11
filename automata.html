@@ -1311,19 +1311,16 @@ function startRenderer(){
 
     // Real cam radius function: base circle + profile displacement
     function realCamRadius(angle,camData,rotOffset){
-      const baseR=8; // 8mm base circle (shaft 5mm + 3mm wall)
-      const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2); // normalize 0..2π
+      const baseR=5; // 5mm base circle (small to make lobe visible!)
+      const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
       let displacement=0;
       if(camData.profile==='smooth'){
-        // Harmonic/sinusoidal: rise 0→π, fall π→2π
         displacement=camData.lift*(1-Math.cos(theta))/2;
       } else if(camData.profile==='sharp'){
-        // Triangular: linear rise 0→π/2, linear fall π/2→π, dwell 0 π→2π
         if(theta<Math.PI/2) displacement=camData.lift*(theta/(Math.PI/2));
         else if(theta<Math.PI) displacement=camData.lift*(1-(theta-Math.PI/2)/(Math.PI/2));
         else displacement=0;
       } else if(camData.profile==='dwell'){
-        // Rise 0→π/3, dwell π/3→π, fall π→4π/3, dwell 4π/3→2π
         if(theta<Math.PI/3) displacement=camData.lift*(theta/(Math.PI/3));
         else if(theta<Math.PI) displacement=camData.lift;
         else if(theta<Math.PI*4/3) displacement=camData.lift*(1-(theta-Math.PI)/(Math.PI/3));
@@ -1333,10 +1330,13 @@ function startRenderer(){
     }
 
     for(let ci=0;ci<Math.min(nCams,4);ci++){
-      const ca=camAngle+ci*Math.PI*0.6; // rotation offset per cam
+      const ca=camAngle+ci*Math.PI*0.6;
       const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.35/Math.max(Math.min(nCams,4)-1,1));
       const camData=buildCamProfile(ci);
-      const baseR=8;
+      // Override lift to be visually clear — scale up significantly
+      const visLift=Math.max(6,camData.lift*1.8);
+      const visCamData={...camData,lift:visLift};
+      const baseR=5;
 
       const camFill=['#D4652A','#C85A22','#BC4F1C','#A84518'][ci];
       const camEdge=['#E87840','#D96C35','#CC602B','#BB5520'][ci];
@@ -1348,14 +1348,14 @@ function startRenderer(){
       // Bottom edge
       ctx.fillStyle=camDark;ctx.strokeStyle=camDark;ctx.lineWidth=1;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,camData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
       // Side rim
       for(let i=0;i<=72;i++){
         const t=(i/72)*Math.PI*2;
         if(Math.sin(t)>-0.2){
-          const r=realCamRadius(t,camData,ca);
+          const r=realCamRadius(t,visCamData,ca);
           const px=gcx+r*Math.cos(t)*msc;
           const pyTop=gcy+r*Math.sin(t)*msc*0.45;
           const pyBot=pyTop+camThick;
@@ -1367,7 +1367,7 @@ function startRenderer(){
       // Top face
       ctx.fillStyle=camFill;ctx.strokeStyle=camEdge;ctx.lineWidth=1.5;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,camData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
       // Center bore
@@ -1376,11 +1376,11 @@ function startRenderer(){
 
       // ── Follower — driven by REAL cam ──
       const topAngle=Math.PI*1.5; // follower sits on top
-      const contactR=realCamRadius(topAngle,camData,ca);
+      const contactR=realCamRadius(topAngle,visCamData,ca);
       const lift=contactR-baseR;
 
       const[f1x,f1y]=mproj(xOff,0,shZ+contactR);
-      const[f2x,f2y]=mproj(xOff,0,shZ+baseR+camData.lift+10+lift);
+      const[f2x,f2y]=mproj(xOff,0,shZ+baseR+visCamData.lift+10+lift);
       ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=4;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(f1x+1,f1y+1);ctx.lineTo(f2x+1,f2y+1);ctx.stroke();
       ctx.strokeStyle='#C4A44A';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
@@ -1394,8 +1394,8 @@ function startRenderer(){
 
       // T-bar
       const platW=5;
-      const[pt1x,pt1y]=mproj(xOff-platW,0,shZ+baseR+camData.lift+10+lift);
-      const[pt2x,pt2y]=mproj(xOff+platW,0,shZ+baseR+camData.lift+10+lift);
+      const[pt1x,pt1y]=mproj(xOff-platW,0,shZ+baseR+visCamData.lift+10+lift);
+      const[pt2x,pt2y]=mproj(xOff+platW,0,shZ+baseR+visCamData.lift+10+lift);
       ctx.strokeStyle='#C4A44A';ctx.lineWidth=2;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(pt1x,pt1y);ctx.lineTo(pt2x,pt2y);ctx.stroke();ctx.lineCap='butt';
 
@@ -1403,7 +1403,7 @@ function startRenderer(){
       const profileLabel=camData.profile==='smooth'?'Harm.':camData.profile==='sharp'?'Tri.':'Dwell';
       const ampLabel=camData.amplitude?Math.round(camData.amplitude)+'°':'';
       ctx.fillStyle='rgba(255,180,80,.5)';ctx.font='600 6px DM Sans';ctx.textAlign='center';
-      const maxR=baseR+camData.lift;
+      const maxR=baseR+visCamData.lift;
       ctx.fillText(`CAM ${ci+1} · ${profileLabel} ${ampLabel}`,gcx,gcy+maxR*msc*0.45+camThick+9);
     }
 
