@@ -411,6 +411,18 @@ const TEMPLATES = {
     {id:"patte_ar_d",name:"Patte arrière D",shape:{type:"rect",w:6,h:22},position:{x:10,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
     {id:"queue",name:"Queue",shape:{type:"tri",base:8,h:24},position:{x:34,y:-6},rotation:120,parent:"corps",anchor:"right",layer:1,movable:true}
   ]},
+  ours:{name:"Ours",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:28,ry:22},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:16},position:{x:-32,y:-12},rotation:0,parent:"corps",anchor:"left",layer:1,movable:false},
+    {id:"museau",name:"Museau",shape:{type:"ellipse",rx:7,ry:5},position:{x:-46,y:-8},rotation:0,parent:"tete",anchor:"left",layer:2,movable:false},
+    {id:"oreille_g",name:"Oreille G",shape:{type:"circle",r:5},position:{x:-38,y:-26},rotation:0,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"oreille_d",name:"Oreille D",shape:{type:"circle",r:5},position:{x:-26,y:-26},rotation:0,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"patte_av_g",name:"Patte avant G",shape:{type:"rect",w:8,h:20},position:{x:-16,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_av_d",name:"Patte avant D",shape:{type:"rect",w:8,h:20},position:{x:-6,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"patte_ar_g",name:"Patte arrière G",shape:{type:"rect",w:9,h:18},position:{x:16,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_ar_d",name:"Patte arrière D",shape:{type:"rect",w:9,h:18},position:{x:8,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"queue",name:"Queue",shape:{type:"circle",r:4},position:{x:30,y:-4},rotation:0,parent:"corps",anchor:"right",layer:1,movable:true}
+  ]},
   chat:{name:"Chat",pieces:[
     {id:"corps",name:"Corps",shape:{type:"ellipse",rx:24,ry:16},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
     {id:"tete",name:"Tête",shape:{type:"circle",r:15},position:{x:-28,y:-10},rotation:0,parent:"corps",anchor:"left",layer:1,movable:false},
@@ -826,6 +838,7 @@ function matchTemplate(input){
   // Match animal/object
   const formKeys={
     chien:['chien','dog','toutou','chiot','puppy'],
+    ours:['ours','bear','ourson','teddy','grizzly','nounours'],
     chat:['chat','cat','chaton','minou','kitty'],
     oiseau:['oiseau','bird','piaf','moineau'],
     canard:['canard','duck'],
@@ -955,7 +968,7 @@ async function doDecompose(){
   try{
     const key = matchTemplate(input);
     if(!key){
-      alert("Je ne reconnais pas encore ça ! Essaie :\n\n🐾 Animaux: chien, chat, oiseau, canard, poisson, dinosaure, cheval, papillon, grenouille, tortue, pingouin, lapin, serpent, crabe, hibou, cochon, éléphant, girafe\n\n👤 Personnages: bonhomme, robot, danseuse, ninja, astronaute, pirate\n\n🔧 Objets: moulin, fusée, fleur, avion, voiture, bateau, étoile, arbre");
+      alert("Je ne reconnais pas encore ça ! Essaie :\n\n🐾 Animaux: chien, chat, ours, oiseau, canard, poisson, dinosaure, cheval, papillon, grenouille, tortue, pingouin, lapin, serpent, crabe, hibou, cochon, éléphant, girafe\n\n👤 Personnages: bonhomme, robot, danseuse, ninja, astronaute, pirate\n\n🔧 Objets: moulin, fusée, fleur, avion, voiture, bateau, étoile, arbre");
       btn.disabled=false; btn.textContent='🧠 Décomposer en formes';
       return;
     }
