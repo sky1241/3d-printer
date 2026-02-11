@@ -389,12 +389,391 @@ function showResult(d){
 }
 
 /* ═══════════════════════════════════════════
-   3D RENDERER
+   3D RENDERER — PRESET-SPECIFIC FIGURINES
    ═══════════════════════════════════════════ */
+
+// Per-preset figurine drawing functions
+const FIGURINE_RENDERERS = {
+  nodding_bird: (ctx,cx,cy,sc,f,camLift)=>{
+    // Bird body (oval) + head that nods
+    const nod = camLift * 0.4;
+    const bx=cx, by=cy;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(bx,by,14*sc,10*sc,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Tail
+    ctx.beginPath();ctx.moveTo(bx+14*sc,by);ctx.lineTo(bx+22*sc,by-8*sc);ctx.lineTo(bx+20*sc,by+2*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    // Neck
+    const nx=bx-10*sc, ny=by-6*sc;
+    ctx.beginPath();ctx.moveTo(nx,ny);ctx.lineTo(nx-4*sc,ny-14*sc+nod*sc);ctx.stroke();
+    // Head
+    const hx=nx-4*sc, hy=ny-14*sc+nod*sc;
+    ctx.beginPath();ctx.arc(hx,hy,6*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Eye
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(hx-3*sc,hy-1.5*sc,1.5*sc,0,Math.PI*2);ctx.fill();
+    // Beak
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.moveTo(hx-6*sc,hy);ctx.lineTo(hx-12*sc,hy+1*sc);ctx.lineTo(hx-6*sc,hy+3*sc);ctx.closePath();ctx.fill();
+  },
+  flapping_bird: (ctx,cx,cy,sc,f,camLift)=>{
+    const flap = camLift * 0.6;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx,cy,12*sc,8*sc,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Head
+    ctx.beginPath();ctx.arc(cx-10*sc,cy-8*sc,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(cx-12*sc,cy-9*sc,1.2*sc,0,Math.PI*2);ctx.fill();
+    // Beak
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.moveTo(cx-15*sc,cy-8*sc);ctx.lineTo(cx-21*sc,cy-6*sc);ctx.lineTo(cx-15*sc,cy-5*sc);ctx.closePath();ctx.fill();
+    // Wings (flapping!)
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2.5*sc;ctx.fillStyle="rgba(251,191,36,.12)";
+    // Left wing
+    ctx.beginPath();ctx.moveTo(cx-4*sc,cy-3*sc);ctx.quadraticCurveTo(cx-25*sc,cy-20*sc-flap*sc,cx-35*sc,cy-5*sc-flap*sc*.5);ctx.lineTo(cx-4*sc,cy+2*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    // Right wing
+    ctx.beginPath();ctx.moveTo(cx+4*sc,cy-3*sc);ctx.quadraticCurveTo(cx+25*sc,cy-20*sc-flap*sc,cx+35*sc,cy-5*sc-flap*sc*.5);ctx.lineTo(cx+4*sc,cy+2*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    // Tail
+    ctx.beginPath();ctx.moveTo(cx+12*sc,cy);ctx.lineTo(cx+22*sc,cy-5*sc);ctx.lineTo(cx+20*sc,cy+3*sc);ctx.closePath();ctx.fill();ctx.stroke();
+  },
+  walking_figure: (ctx,cx,cy,sc,f,camLift)=>{
+    const walk = Math.sin(f*0.04)*0.5;
+    // Head
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx,cy-28*sc,7*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Body
+    ctx.beginPath();ctx.moveTo(cx,cy-21*sc);ctx.lineTo(cx,cy);ctx.stroke();
+    // Arms swinging
+    ctx.beginPath();ctx.moveTo(cx,cy-16*sc);ctx.lineTo(cx-12*sc*Math.cos(walk),cy-8*sc+8*sc*Math.sin(walk));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy-16*sc);ctx.lineTo(cx+12*sc*Math.cos(walk),cy-8*sc-8*sc*Math.sin(walk));ctx.stroke();
+    // Legs alternating
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx-8*sc*Math.cos(-walk),cy+18*sc+4*sc*Math.sin(-walk));ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+8*sc*Math.cos(-walk),cy+18*sc-4*sc*Math.sin(-walk));ctx.stroke();
+    // Feet
+    ctx.lineWidth=2.5*sc;
+    const lx=cx-8*sc*Math.cos(-walk),ly=cy+18*sc+4*sc*Math.sin(-walk);
+    const rx=cx+8*sc*Math.cos(-walk),ry=cy+18*sc-4*sc*Math.sin(-walk);
+    ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx-4*sc,ly);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx-4*sc,ry);ctx.stroke();
+  },
+  bobbing_duck: (ctx,cx,cy,sc,f,camLift)=>{
+    const bob = camLift * 0.35;
+    const dy = cy + bob*sc;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx,dy,16*sc,11*sc,0.1,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Head
+    ctx.beginPath();ctx.arc(cx-12*sc,dy-14*sc,7*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Neck
+    ctx.beginPath();ctx.moveTo(cx-8*sc,dy-5*sc);ctx.quadraticCurveTo(cx-14*sc,dy-10*sc,cx-12*sc,dy-7*sc);ctx.stroke();
+    // Eye
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(cx-14*sc,dy-15.5*sc,1.5*sc,0,Math.PI*2);ctx.fill();
+    // Beak
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.moveTo(cx-19*sc,dy-14*sc);ctx.lineTo(cx-26*sc,dy-12*sc);ctx.lineTo(cx-19*sc,dy-10*sc);ctx.closePath();ctx.fill();
+    // Tail feathers
+    ctx.strokeStyle="#fbbf24";ctx.fillStyle="rgba(251,191,36,.15)";
+    ctx.beginPath();ctx.moveTo(cx+16*sc,dy-2*sc);ctx.lineTo(cx+24*sc,dy-12*sc);ctx.lineTo(cx+22*sc,dy);ctx.closePath();ctx.fill();ctx.stroke();
+    // Water ripples
+    ctx.strokeStyle="rgba(96,165,250,.2)";ctx.lineWidth=1*sc;
+    for(let i=0;i<3;i++){
+      const rw=20+i*10,ry2=dy+10*sc+i*3*sc;
+      ctx.beginPath();ctx.ellipse(cx,ry2,rw*sc*.3,3*sc,0,0,Math.PI);ctx.stroke();
+    }
+  },
+  rocking_horse: (ctx,cx,cy,sc,f,camLift)=>{
+    const rock = camLift * 0.03;
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(rock);
+    // Rockers (bottom curves)
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2.5*sc;ctx.fillStyle="rgba(251,191,36,.08)";
+    ctx.beginPath();ctx.ellipse(0,18*sc,22*sc,5*sc,0,0,Math.PI);ctx.fill();ctx.stroke();
+    // Legs
+    ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(-10*sc,18*sc);ctx.lineTo(-8*sc,4*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(10*sc,18*sc);ctx.lineTo(8*sc,4*sc);ctx.stroke();
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";
+    ctx.beginPath();ctx.ellipse(0,0,15*sc,8*sc,-0.1,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Neck + Head
+    ctx.beginPath();ctx.moveTo(-12*sc,-3*sc);ctx.lineTo(-18*sc,-20*sc);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(-20*sc,-24*sc,6*sc,5*sc,0.3,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Eye
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(-22*sc,-25*sc,1.2*sc,0,Math.PI*2);ctx.fill();
+    // Ear
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=1.5*sc;
+    ctx.beginPath();ctx.moveTo(-19*sc,-28*sc);ctx.lineTo(-17*sc,-34*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-22*sc,-28*sc);ctx.lineTo(-21*sc,-33*sc);ctx.stroke();
+    // Tail
+    ctx.beginPath();ctx.moveTo(15*sc,-2*sc);ctx.quadraticCurveTo(22*sc,-8*sc,20*sc,-14*sc);ctx.stroke();
+    ctx.restore();
+  },
+  pecking_chicken: (ctx,cx,cy,sc,f,camLift)=>{
+    const peck = camLift * 0.5;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx+5*sc,cy,12*sc,10*sc,0.2,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Tail
+    ctx.fillStyle="rgba(251,191,36,.15)";
+    ctx.beginPath();ctx.moveTo(cx+17*sc,cy-3*sc);ctx.lineTo(cx+28*sc,cy-15*sc);ctx.lineTo(cx+25*sc,cy-5*sc);ctx.lineTo(cx+30*sc,cy-10*sc);ctx.lineTo(cx+24*sc,cy);ctx.closePath();ctx.fill();ctx.stroke();
+    // Neck (pecking down)
+    const headY = cy - 10*sc + peck*sc;
+    const headX = cx - 10*sc - peck*sc*0.3;
+    ctx.beginPath();ctx.moveTo(cx-5*sc,cy-5*sc);ctx.quadraticCurveTo(cx-8*sc,cy-12*sc,headX,headY);ctx.stroke();
+    // Head
+    ctx.fillStyle="rgba(251,191,36,.25)";
+    ctx.beginPath();ctx.arc(headX,headY,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Comb
+    ctx.fillStyle="#f87171";ctx.strokeStyle="#f87171";ctx.lineWidth=1*sc;
+    ctx.beginPath();ctx.moveTo(headX-2*sc,headY-5*sc);ctx.lineTo(headX,headY-9*sc);ctx.lineTo(headX+2*sc,headY-5*sc);ctx.fill();
+    // Beak
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.moveTo(headX-5*sc,headY);ctx.lineTo(headX-11*sc,headY+2*sc);ctx.lineTo(headX-5*sc,headY+3*sc);ctx.closePath();ctx.fill();
+    // Eye
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(headX-2*sc,headY-1.5*sc,1.2*sc,0,Math.PI*2);ctx.fill();
+    // Legs
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=1.5*sc;
+    ctx.beginPath();ctx.moveTo(cx,cy+10*sc);ctx.lineTo(cx-3*sc,cy+20*sc);ctx.lineTo(cx-7*sc,cy+20*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+8*sc,cy+10*sc);ctx.lineTo(cx+5*sc,cy+20*sc);ctx.lineTo(cx+1*sc,cy+20*sc);ctx.stroke();
+  },
+  waving_cat: (ctx,cx,cy,sc,f,camLift)=>{
+    const wave = camLift * 0.06;
+    // Body (sitting)
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx,cy+5*sc,11*sc,14*sc,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Head
+    ctx.beginPath();ctx.arc(cx,cy-16*sc,9*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Ears
+    ctx.beginPath();ctx.moveTo(cx-6*sc,cy-24*sc);ctx.lineTo(cx-10*sc,cy-32*sc);ctx.lineTo(cx-2*sc,cy-24*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+6*sc,cy-24*sc);ctx.lineTo(cx+10*sc,cy-32*sc);ctx.lineTo(cx+2*sc,cy-24*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    // Eyes
+    ctx.fillStyle="#06060a";
+    ctx.beginPath();ctx.ellipse(cx-3.5*sc,cy-17*sc,1.8*sc,2.2*sc,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(cx+3.5*sc,cy-17*sc,1.8*sc,2.2*sc,0,0,Math.PI*2);ctx.fill();
+    // Nose
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.moveTo(cx,cy-13.5*sc);ctx.lineTo(cx-1.5*sc,cy-11.5*sc);ctx.lineTo(cx+1.5*sc,cy-11.5*sc);ctx.closePath();ctx.fill();
+    // Waving paw! (right)
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2.5*sc;
+    ctx.save();ctx.translate(cx+10*sc,cy-4*sc);ctx.rotate(-1.2+wave);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-18*sc);ctx.stroke();
+    ctx.fillStyle="rgba(251,191,36,.3)";ctx.beginPath();ctx.arc(0,-18*sc,3*sc,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // Static paw (left)
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx-10*sc,cy);ctx.lineTo(cx-14*sc,cy+12*sc);ctx.stroke();
+    // Tail
+    ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx+10*sc,cy+15*sc);ctx.quadraticCurveTo(cx+25*sc,cy+10*sc,cx+22*sc,cy-2*sc);ctx.stroke();
+  },
+  drummer: (ctx,cx,cy,sc,f,camLift)=>{
+    const hit = Math.sin(f*0.05);
+    // Head
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx,cy-22*sc,7*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(cx-2*sc,cy-23*sc,1.2*sc,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+3*sc,cy-23*sc,1.2*sc,0,Math.PI*2);ctx.fill();
+    // Body
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx,cy-15*sc);ctx.lineTo(cx,cy+4*sc);ctx.stroke();
+    // Arms with drumsticks (alternating!)
+    const la=-0.8+hit*0.5, ra=-0.8-hit*0.5;
+    ctx.lineWidth=2*sc;
+    // Left arm
+    ctx.beginPath();ctx.moveTo(cx,cy-10*sc);ctx.lineTo(cx-14*sc,cy-4*sc+la*10*sc);ctx.stroke();
+    ctx.lineWidth=1.5*sc;ctx.strokeStyle="#ff6b35";
+    ctx.beginPath();ctx.moveTo(cx-14*sc,cy-4*sc+la*10*sc);ctx.lineTo(cx-18*sc,cy+2*sc+la*12*sc);ctx.stroke();
+    // Right arm
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx,cy-10*sc);ctx.lineTo(cx+14*sc,cy-4*sc+ra*10*sc);ctx.stroke();
+    ctx.lineWidth=1.5*sc;ctx.strokeStyle="#ff6b35";
+    ctx.beginPath();ctx.moveTo(cx+14*sc,cy-4*sc+ra*10*sc);ctx.lineTo(cx+18*sc,cy+2*sc+ra*12*sc);ctx.stroke();
+    // Drum
+    ctx.fillStyle="rgba(255,107,53,.1)";ctx.strokeStyle="rgba(255,107,53,.4)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx,cy+12*sc,16*sc,6*sc,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Drum body
+    ctx.beginPath();ctx.moveTo(cx-16*sc,cy+12*sc);ctx.lineTo(cx-16*sc,cy+22*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+16*sc,cy+12*sc);ctx.lineTo(cx+16*sc,cy+22*sc);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(cx,cy+22*sc,16*sc,6*sc,0,0,Math.PI);ctx.stroke();
+    // Impact flash
+    if(Math.abs(hit)>0.8){
+      const side=hit>0?-1:1;
+      ctx.fillStyle="rgba(255,107,53,.3)";ctx.beginPath();
+      ctx.arc(cx+side*8*sc,cy+10*sc,4*sc,0,Math.PI*2);ctx.fill();
+    }
+  },
+  blacksmith: (ctx,cx,cy,sc,f,camLift)=>{
+    const strike = camLift * 0.05;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.25)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx-5*sc,cy-22*sc,7*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5*sc,cy-15*sc);ctx.lineTo(cx-5*sc,cy+5*sc);ctx.stroke();
+    // Legs
+    ctx.beginPath();ctx.moveTo(cx-5*sc,cy+5*sc);ctx.lineTo(cx-12*sc,cy+22*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx-5*sc,cy+5*sc);ctx.lineTo(cx+2*sc,cy+22*sc);ctx.stroke();
+    // Hammer arm (swinging!)
+    ctx.save();ctx.translate(cx-5*sc,cy-10*sc);ctx.rotate(-0.3+strike);
+    ctx.lineWidth=2*sc;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(20*sc,-12*sc);ctx.stroke();
+    // Hammer head
+    ctx.fillStyle="rgba(255,107,53,.3)";ctx.strokeStyle="#ff6b35";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.rect(17*sc,-18*sc,8*sc,6*sc);ctx.fill();ctx.stroke();
+    ctx.restore();
+    // Anvil
+    ctx.fillStyle="rgba(255,107,53,.12)";ctx.strokeStyle="rgba(255,107,53,.4)";ctx.lineWidth=2*sc;
+    ctx.beginPath();
+    ctx.moveTo(cx+10*sc,cy+5*sc);ctx.lineTo(cx+30*sc,cy+5*sc);ctx.lineTo(cx+28*sc,cy+10*sc);
+    ctx.lineTo(cx+25*sc,cy+10*sc);ctx.lineTo(cx+25*sc,cy+22*sc);ctx.lineTo(cx+15*sc,cy+22*sc);
+    ctx.lineTo(cx+15*sc,cy+10*sc);ctx.lineTo(cx+12*sc,cy+10*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    // Sparks on hit
+    if(strike > 0.02){
+      ctx.fillStyle="#fbbf24";
+      for(let i=0;i<4;i++){
+        const a=Math.random()*Math.PI*2,r=(3+Math.random()*6)*sc;
+        ctx.beginPath();ctx.arc(cx+20*sc+r*Math.cos(a),cy+3*sc+r*Math.sin(a),1.2*sc,0,Math.PI*2);ctx.fill();
+      }
+    }
+  },
+  swimming_fish: (ctx,cx,cy,sc,f,camLift)=>{
+    const tail = Math.sin(f*0.06)*0.4;
+    // Body
+    ctx.fillStyle="rgba(251,191,36,.2)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.ellipse(cx,cy,18*sc,10*sc,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Tail (wagging)
+    ctx.save();ctx.translate(cx+18*sc,cy);ctx.rotate(tail);
+    ctx.fillStyle="rgba(251,191,36,.15)";
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(14*sc,-10*sc);ctx.lineTo(14*sc,10*sc);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.restore();
+    // Dorsal fin
+    ctx.beginPath();ctx.moveTo(cx-5*sc,cy-10*sc);ctx.quadraticCurveTo(cx+2*sc,cy-20*sc,cx+10*sc,cy-10*sc);ctx.fill();ctx.stroke();
+    // Eye
+    ctx.fillStyle="#06060a";ctx.beginPath();ctx.arc(cx-10*sc,cy-2*sc,2.5*sc,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(cx-10.8*sc,cy-2.8*sc,0.8*sc,0,Math.PI*2);ctx.fill();
+    // Mouth
+    ctx.strokeStyle="#fbbf24";ctx.lineWidth=1.5*sc;
+    ctx.beginPath();ctx.arc(cx-17*sc,cy+1*sc,3*sc,-0.5,0.5);ctx.stroke();
+    // Bubbles
+    ctx.strokeStyle="rgba(96,165,250,.25)";ctx.lineWidth=1*sc;
+    for(let i=0;i<3;i++){
+      const bx2=cx-22*sc-i*5*sc,by2=cy-5*sc-i*8*sc+Math.sin(f*0.03+i)*3*sc;
+      ctx.beginPath();ctx.arc(bx2,by2,(2+i)*sc,0,Math.PI*2);ctx.stroke();
+    }
+  },
+  // Mechanical movements
+  slider: (ctx,cx,cy,sc,f,camLift)=>{
+    const slide = camLift * 0.6;
+    // Rail
+    ctx.strokeStyle="rgba(255,107,53,.3)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx-30*sc,cy);ctx.lineTo(cx+30*sc,cy);ctx.stroke();
+    // Slider block
+    ctx.fillStyle="rgba(96,165,250,.2)";ctx.strokeStyle="rgba(96,165,250,.5)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.rect(cx-8*sc+slide*sc,cy-8*sc,16*sc,16*sc);ctx.fill();ctx.stroke();
+    // Arrows
+    ctx.strokeStyle="rgba(96,165,250,.3)";ctx.lineWidth=1.5*sc;
+    ctx.beginPath();ctx.moveTo(cx-25*sc,cy-14*sc);ctx.lineTo(cx+25*sc,cy-14*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+20*sc,cy-18*sc);ctx.lineTo(cx+25*sc,cy-14*sc);ctx.lineTo(cx+20*sc,cy-10*sc);ctx.stroke();
+  },
+  rocker: (ctx,cx,cy,sc,f,camLift)=>{
+    const rock = camLift * 0.04;
+    // Pivot
+    ctx.fillStyle="rgba(255,107,53,.15)";ctx.strokeStyle="rgba(255,107,53,.4)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx,cy+10*sc,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Beam
+    ctx.save();ctx.translate(cx,cy+10*sc);ctx.rotate(rock);
+    ctx.strokeStyle="rgba(96,165,250,.5)";ctx.lineWidth=3*sc;
+    ctx.beginPath();ctx.moveTo(-30*sc,0);ctx.lineTo(30*sc,0);ctx.stroke();
+    // Weights
+    ctx.fillStyle="rgba(96,165,250,.2)";
+    ctx.beginPath();ctx.arc(-30*sc,0,6*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.arc(30*sc,0,6*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.restore();
+  },
+  turntable: (ctx,cx,cy,sc,f,camLift)=>{
+    const angle = f * 0.01;
+    // Geneva cross
+    ctx.strokeStyle="rgba(96,165,250,.4)";ctx.lineWidth=2*sc;
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(angle);
+    for(let i=0;i<4;i++){
+      ctx.rotate(Math.PI/2);
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-22*sc);ctx.stroke();
+      ctx.beginPath();ctx.arc(0,-22*sc,4*sc,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+    // Center
+    ctx.fillStyle="rgba(96,165,250,.15)";ctx.beginPath();ctx.arc(cx,cy,6*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Driver pin
+    const px=cx+20*sc*Math.cos(f*0.025),py=cy+20*sc*Math.sin(f*0.025);
+    ctx.fillStyle="#ff6b35";ctx.beginPath();ctx.arc(px,py,3*sc,0,Math.PI*2);ctx.fill();
+  },
+  sequence: (ctx,cx,cy,sc,f,camLift)=>{
+    // Multi-step sequence bars
+    const steps=4;
+    for(let i=0;i<steps;i++){
+      const phase=(f*0.02+i*Math.PI/2);
+      const h=Math.max(0,Math.sin(phase))*15;
+      const x=cx+(i-1.5)*16*sc;
+      ctx.fillStyle=`rgba(96,165,250,${0.15+h/30})`;ctx.strokeStyle="rgba(96,165,250,.4)";ctx.lineWidth=1.5*sc;
+      ctx.beginPath();ctx.rect(x,cy+10*sc-h*sc,12*sc,h*sc+4*sc);ctx.fill();ctx.stroke();
+      // Arrow
+      if(h>5){ctx.fillStyle="rgba(96,165,250,.5)";ctx.beginPath();ctx.moveTo(x+6*sc,cy+6*sc-h*sc);ctx.lineTo(x+3*sc,cy+12*sc-h*sc);ctx.lineTo(x+9*sc,cy+12*sc-h*sc);ctx.closePath();ctx.fill();}
+    }
+    // Base
+    ctx.strokeStyle="rgba(255,107,53,.3)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.moveTo(cx-35*sc,cy+15*sc);ctx.lineTo(cx+35*sc,cy+15*sc);ctx.stroke();
+  },
+  striker: (ctx,cx,cy,sc,f,camLift)=>{
+    const strike=Math.max(0,camLift)*0.5;
+    // Target
+    ctx.fillStyle="rgba(255,107,53,.1)";ctx.strokeStyle="rgba(255,107,53,.3)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.rect(cx+12*sc,cy-10*sc,6*sc,20*sc);ctx.fill();ctx.stroke();
+    // Striker arm
+    ctx.strokeStyle="rgba(96,165,250,.5)";ctx.lineWidth=3*sc;
+    ctx.beginPath();ctx.moveTo(cx-20*sc,cy);ctx.lineTo(cx+strike*20*sc,cy);ctx.stroke();
+    // Striker head
+    ctx.fillStyle="rgba(96,165,250,.3)";
+    ctx.beginPath();ctx.arc(cx+strike*20*sc,cy,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Impact
+    if(strike>0.4){ctx.fillStyle="rgba(255,107,53,.4)";ctx.beginPath();ctx.arc(cx+12*sc,cy,8*sc*strike,0,Math.PI*2);ctx.fill();}
+  },
+  holder: (ctx,cx,cy,sc,f,camLift)=>{
+    const hold=camLift>3?1:0;
+    // Clamp arms
+    const gap=hold?2:10;
+    ctx.strokeStyle="rgba(96,165,250,.5)";ctx.lineWidth=2.5*sc;
+    ctx.beginPath();ctx.moveTo(cx-20*sc,cy+15*sc);ctx.lineTo(cx-gap*sc,cy);ctx.lineTo(cx-20*sc,cy-15*sc);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+20*sc,cy+15*sc);ctx.lineTo(cx+gap*sc,cy);ctx.lineTo(cx+20*sc,cy-15*sc);ctx.stroke();
+    // Object being held
+    ctx.fillStyle=hold?"rgba(52,211,153,.2)":"rgba(251,191,36,.15)";
+    ctx.strokeStyle=hold?"rgba(52,211,153,.5)":"rgba(251,191,36,.3)";
+    ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx,cy,7*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Lock indicator
+    if(hold){ctx.fillStyle="rgba(52,211,153,.5)";ctx.font=`bold ${10*sc}px 'DM Sans'`;ctx.textAlign="center";ctx.fillText("🔒",cx,cy-14*sc);}
+  },
+  multi_axis: (ctx,cx,cy,sc,f,camLift)=>{
+    // X axis motion
+    const mx=Math.sin(f*0.03)*12;
+    const my=Math.cos(f*0.025)*10;
+    const mz=Math.sin(f*0.02)*8;
+    // Axes
+    ctx.strokeStyle="rgba(255,107,53,.2)";ctx.lineWidth=1*sc;ctx.setLineDash([3*sc,3*sc]);
+    ctx.beginPath();ctx.moveTo(cx-30*sc,cy);ctx.lineTo(cx+30*sc,cy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy-25*sc);ctx.lineTo(cx,cy+25*sc);ctx.stroke();
+    ctx.setLineDash([]);
+    // Labels
+    ctx.fillStyle="rgba(255,107,53,.3)";ctx.font=`bold ${8*sc}px 'JetBrains Mono'`;ctx.textAlign="center";
+    ctx.fillText("X",cx+33*sc,cy+3*sc);ctx.fillText("Y",cx+3*sc,cy-27*sc);
+    // Moving point
+    ctx.fillStyle="rgba(96,165,250,.3)";ctx.strokeStyle="rgba(96,165,250,.5)";ctx.lineWidth=2*sc;
+    ctx.beginPath();ctx.arc(cx+mx*sc,cy+my*sc,6*sc+mz*sc*.3,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // Trail
+    ctx.strokeStyle="rgba(96,165,250,.1)";ctx.lineWidth=1*sc;
+    ctx.beginPath();
+    for(let t=0;t<60;t++){
+      const tx=Math.sin((f-t)*0.03)*12,ty=Math.cos((f-t)*0.025)*10;
+      t===0?ctx.moveTo(cx+tx*sc,cy+ty*sc):ctx.lineTo(cx+tx*sc,cy+ty*sc);
+    }
+    ctx.stroke();
+  }
+};
+
 function render3D(p){
   const cv=$("c3d");const dpr=Math.min(window.devicePixelRatio||1,2);
   cv.width=cv.offsetWidth*dpr;cv.height=cv.offsetHeight*dpr;
   const ctx=cv.getContext("2d");const w=cv.width,h=cv.height;let f=0;
+  const presetId = p.id || "custom";
 
   function draw(){
     f++;ctx.clearRect(0,0,w,h);
@@ -414,13 +793,12 @@ function render3D(p){
     ctx.globalAlpha=1;
 
     const bw=C.w*.6,bd=C.d*.6,bh=C.h*.55;
-    // Box faces
+    // Box
     const bx=[[-bw/2,-bd/2,0],[bw/2,-bd/2,0],[bw/2,bd/2,0],[-bw/2,bd/2,0],[-bw/2,-bd/2,bh],[bw/2,-bd/2,bh],[bw/2,bd/2,bh],[-bw/2,bd/2,bh]].map(c=>proj(...c));
     const faces=[[0,1,5,4,"rgba(255,107,53,.04)"],[1,2,6,5,"rgba(255,107,53,.025)"],[2,3,7,6,"rgba(255,107,53,.02)"],[4,5,6,7,"rgba(255,107,53,.06)"]];
     faces.forEach(([a,b,c,d,col])=>{ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(bx[a][0],bx[a][1]);ctx.lineTo(bx[b][0],bx[b][1]);ctx.lineTo(bx[c][0],bx[c][1]);ctx.lineTo(bx[d][0],bx[d][1]);ctx.closePath();ctx.fill()});
     ctx.strokeStyle="rgba(255,107,53,.35)";ctx.lineWidth=1.5*sc;
     [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(([a,b])=>{ctx.beginPath();ctx.moveTo(bx[a][0],bx[a][1]);ctx.lineTo(bx[b][0],bx[b][1]);ctx.stroke()});
-    // Panel lines
     ctx.strokeStyle="rgba(255,107,53,.08)";ctx.lineWidth=.6*sc;
     for(let i=1;i<5;i++){const t=i/5;let[x1,y1]=proj(-bw/2,-bd/2,bh*t),[x2,y2]=proj(bw/2,-bd/2,bh*t);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();[x1,y1]=proj(bw/2,-bd/2,bh*t);[x2,y2]=proj(bw/2,bd/2,bh*t);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
 
@@ -430,8 +808,9 @@ function render3D(p){
     ctx.strokeStyle="rgba(255,255,255,.18)";ctx.lineWidth=3*sc;ctx.beginPath();ctx.moveTo(s1x,s1y);ctx.lineTo(s2x,s2y);ctx.stroke();
     [[-sl],[sl]].forEach(([sy])=>{let[bxx,by]=proj(0,sy,sz);ctx.fillStyle="rgba(255,107,53,.12)";ctx.strokeStyle="rgba(255,107,53,.3)";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(bxx,by,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke()});
 
-    // Cams
+    // Cam (single main cam with glow)
     const camC=["#ff6b35","#ff8c5a","#ffad85","#ffd0b5"];
+    const camLift_raw=[];
     for(let ci=0;ci<Math.min(p.c,4);ci++){
       const ca=f*.018+ci*Math.PI*.65,sp=Math.min(p.c,4),off=(ci-(sp-1)/2)*(bd*.4/Math.max(sp-1,1)),br=26-ci*2;
       let[ccx,ccy]=proj(0,off,sz);
@@ -441,45 +820,47 @@ function render3D(p){
       ctx.closePath();ctx.stroke();ctx.shadowBlur=0;
       ctx.fillStyle=camC[ci]+"10";ctx.fill();
       ctx.fillStyle=camC[ci]+"40";ctx.beginPath();ctx.arc(ccx,ccy,3.5*sc,0,Math.PI*2);ctx.fill();
-      ctx.strokeStyle=camC[ci]+"50";ctx.lineWidth=1*sc;ctx.beginPath();ctx.moveTo(ccx-2*sc,ccy-3*sc);ctx.lineTo(ccx-2*sc,ccy+3*sc);ctx.stroke();
+      const cd=9*Math.sin(ca)+4*Math.sin(ca*1.3);
+      camLift_raw.push(cd);
 
-      // Follower
-      const cd=9*Math.sin(ca)+4*Math.sin(ca*1.3);const ftZ=sz+br+cd+16;
+      // Follower rod
+      const ftZ=sz+br+cd+16;
       let[ftx,fty]=proj(0,off,ftZ),[fbx,fby]=proj(0,off,sz+br+1);
       ctx.strokeStyle="#fbbf24";ctx.lineWidth=2*sc;ctx.beginPath();ctx.moveTo(fbx,fby);ctx.lineTo(ftx,fty);ctx.stroke();
       ctx.fillStyle="rgba(251,191,36,.2)";ctx.strokeStyle="#fbbf24";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(fbx,fby,3.5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-      // Figurine
-      const fZ=ftZ+6,bob=cd*.5;let[px,py]=proj(0,off,fZ+bob);
-      ctx.fillStyle="#fbbf24";ctx.shadowColor="#fbbf24";ctx.shadowBlur=6*sc;
-      ctx.beginPath();ctx.arc(px,py-10*sc,5.5*sc,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-      ctx.strokeStyle="rgba(251,191,36,.45)";ctx.lineWidth=1.8*sc;
-      ctx.beginPath();ctx.moveTo(px,py-4*sc);ctx.lineTo(px,py+15*sc);ctx.stroke();
-      const arm=Math.sin(f*.022+ci)*.35;
-      ctx.beginPath();ctx.moveTo(px-11*sc*Math.cos(arm),py+1*sc-7*sc*Math.sin(arm));ctx.lineTo(px,py+1*sc);ctx.lineTo(px+11*sc*Math.cos(-arm),py+1*sc+7*sc*Math.sin(arm));ctx.stroke();
-      ctx.beginPath();ctx.moveTo(px,py+15*sc);ctx.lineTo(px-5*sc,py+26*sc);ctx.moveTo(px,py+15*sc);ctx.lineTo(px+5*sc,py+26*sc);ctx.stroke()
     }
 
-    // Motor OR Crank based on drive mode
+    // ── PRESET-SPECIFIC FIGURINE ──
+    const figCx=cx, figCy=cy-bh*.65*sc;
+    const mainLift=camLift_raw[0]||Math.sin(f*0.03)*8;
+    const renderer=FIGURINE_RENDERERS[presetId];
+    if(renderer){
+      ctx.save();
+      renderer(ctx,figCx,figCy,sc,f,mainLift);
+      ctx.restore();
+    }else{
+      // Generic fallback for custom
+      ctx.fillStyle="#fbbf24";ctx.strokeStyle="rgba(251,191,36,.45)";ctx.lineWidth=2*sc;
+      ctx.beginPath();ctx.arc(figCx,figCy-10*sc,6*sc,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.moveTo(figCx,figCy-4*sc);ctx.lineTo(figCx,figCy+16*sc);ctx.stroke();
+      const bob=mainLift*.4;
+      ctx.beginPath();ctx.moveTo(figCx,figCy+16*sc);ctx.lineTo(figCx-6*sc,figCy+28*sc+bob*sc*.2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(figCx,figCy+16*sc);ctx.lineTo(figCx+6*sc,figCy+28*sc-bob*sc*.2);ctx.stroke();
+    }
+
+    // Motor OR Crank
     if(drive===1){
-      // Motor
       let[mx,my]=proj(bw/2+14,-bd/2+8,bh*.18);
       ctx.fillStyle="rgba(255,107,53,.08)";ctx.strokeStyle="rgba(255,107,53,.25)";ctx.lineWidth=1.5*sc;ctx.beginPath();ctx.arc(mx,my,9*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
       ctx.fillStyle="rgba(255,107,53,.3)";ctx.font=`bold ${9*sc}px 'DM Sans',sans-serif`;ctx.textAlign="center";ctx.fillText("M",mx,my+3.5*sc);
-      // Belt
       let[dx,dy]=proj(bw/2+5,-bd/2+8,sz);ctx.strokeStyle="rgba(255,107,53,.1)";ctx.lineWidth=1*sc;ctx.setLineDash([3*sc,3*sc]);ctx.beginPath();ctx.moveTo(mx,my-9*sc);ctx.lineTo(dx,dy);ctx.stroke();ctx.setLineDash([]);
     }else{
-      // Crank handle
       const cA=f*.018;let[hx,hy]=proj(0,-sl-14,sz);
-      // Arm
       ctx.strokeStyle="rgba(96,165,250,.35)";ctx.lineWidth=2.5*sc;ctx.beginPath();ctx.moveTo(hx,hy);
-      const hLen=18;
-      const hEx=hx+hLen*sc*Math.cos(cA),hEy=hy+hLen*sc*Math.sin(cA);
+      const hLen=18,hEx=hx+hLen*sc*Math.cos(cA),hEy=hy+hLen*sc*Math.sin(cA);
       ctx.lineTo(hEx,hEy);ctx.stroke();
-      // Knob
       ctx.fillStyle="rgba(96,165,250,.15)";ctx.strokeStyle="rgba(96,165,250,.4)";ctx.lineWidth=1.5*sc;
       ctx.beginPath();ctx.arc(hEx,hEy,4.5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
-      // Hub
       ctx.fillStyle="rgba(96,165,250,.1)";ctx.beginPath();ctx.arc(hx,hy,5*sc,0,Math.PI*2);ctx.fill();
     }
 
