@@ -1453,24 +1453,11 @@ function animate(){
       if(mesh.userData.isFollower||mesh.userData.isTbar){
         const camData=mesh.userData.camData;
         if(camData){
-          const cycle=camT%(Math.PI*2);
-          const prof=camData.profile||'smooth';
-          let wave;
-          if(prof==='sharp'){
-            const p=cycle/(Math.PI*2);
-            wave=p<0.25?p*4:p<0.75?2-p*4:p*4-4;
-          } else if(prof==='dwell'){
-            const p=cycle/(Math.PI*2);
-            if(p<0.05) wave=p*20;
-            else if(p<0.45) wave=1;
-            else if(p<0.55) wave=1-(p-0.45)*20;
-            else if(p<0.95) wave=-1;
-            else wave=-1+(p-0.95)*20;
-          } else {
-            wave=Math.sin(cycle);
-          }
+          const angle=((mesh.userData.camRotOffset||0)+camT+Math.PI*1.5)%(Math.PI*2);
+          const r=realCamRadiusSTL(((angle%(Math.PI*2))+(Math.PI*2))%(Math.PI*2),camData);
           const lift=camData.lift_mm||5;
-          mesh.position.y=mesh.userData.baseY + wave*lift*1.5;
+          const norm=(r-camData.base_radius_mm)/lift; // 0→1
+          mesh.position.y=mesh.userData.baseY + norm*lift*1.5;
         }
       }
     });
