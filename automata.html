@@ -161,7 +161,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
   <div class="topbar-drive">
     <div class="drive-chip on-b" id="dCrank" onclick="setDrive(0)"><span>🖐️</span> Manivelle</div>
     <div class="drive-chip" id="dMotor" onclick="setDrive(1)"><span>⚡</span> Moteur</div>
-    <button class="topbar-gen" id="btnGenerate" disabled onclick="doGenerate()">⬇ GÉNÉRER STL</button>
+    <button class="topbar-gen" id="btnGenerate" disabled onclick="doGenerate()">⬇ EXPORTER CONFIG</button>
   </div>
 </div>
 
@@ -1398,13 +1398,12 @@ function startRenderer(){
 
     for(let ci=0;ci<Math.min(nCams,4);ci++){
       const ca=camAngle+ci*Math.PI*0.6;
-      // Space cams evenly along shaft with more room
       const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
       const camData=buildCamProfile(ci);
-      // Real proportions: baseR=4mm, lift=real calculated (clamped 2-6mm)
-      const realLift=Math.max(2,Math.min(camData.lift,6));
-      const visCamData={...camData,lift:realLift,baseR:4};
-      const baseR=4;
+      // FORCE visible lobe: base=3mm, lift=min 7mm so ratio is always >3:1
+      const baseR=3;
+      const realLift=Math.max(7,camData.lift*1.5);
+      const visCamData={...camData,lift:realLift,baseR};
 
       const camFill=['#D4652A','#C85A22','#BC4F1C','#A84518'][ci];
       const camEdge=['#E87840','#D96C35','#CC602B','#BB5520'][ci];
@@ -1416,7 +1415,7 @@ function startRenderer(){
       // Bottom edge
       ctx.fillStyle=camDark;ctx.strokeStyle=camDark;ctx.lineWidth=1;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.6+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
       // Side rim
@@ -1425,7 +1424,7 @@ function startRenderer(){
         if(Math.sin(t)>-0.2){
           const r=realCamRadius(t,visCamData,ca);
           const px=gcx+r*Math.cos(t)*msc;
-          const pyTop=gcy+r*Math.sin(t)*msc*0.45;
+          const pyTop=gcy+r*Math.sin(t)*msc*0.6;
           const pyBot=pyTop+camThick;
           ctx.strokeStyle=camDark;ctx.lineWidth=1.2;
           ctx.beginPath();ctx.moveTo(px,pyTop);ctx.lineTo(px,pyBot);ctx.stroke();
@@ -1435,12 +1434,12 @@ function startRenderer(){
       // Top face
       ctx.fillStyle=camFill;ctx.strokeStyle=camEdge;ctx.lineWidth=1.5;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.6;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
       // Center bore
       ctx.fillStyle='#222';ctx.strokeStyle='#444';ctx.lineWidth=0.8;
-      ctx.beginPath();ctx.ellipse(gcx,gcy,2.5*msc,2.5*msc*0.45,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.beginPath();ctx.ellipse(gcx,gcy,1.5*msc,1.5*msc*0.6,0,0,Math.PI*2);ctx.fill();ctx.stroke();
 
       // ── Follower — driven by REAL cam ──
       const topAngle=Math.PI*1.5; // follower sits on top
@@ -1472,7 +1471,7 @@ function startRenderer(){
       const ampLabel=camData.amplitude?Math.round(camData.amplitude)+'°':'';
       ctx.fillStyle='rgba(255,180,80,.5)';ctx.font='600 6px DM Sans';ctx.textAlign='center';
       const maxR=baseR+visCamData.lift;
-      ctx.fillText(`CAM ${ci+1} · ${profileLabel} ${ampLabel}`,gcx,gcy+maxR*msc*0.45+camThick+9);
+      ctx.fillText(`CAM ${ci+1} · ${profileLabel} ${ampLabel}`,gcx,gcy+maxR*msc*0.6+camThick+9);
     }
 
     // ── Drive — solid ──
@@ -1506,8 +1505,8 @@ function startRenderer(){
       usedCams.forEach(ci=>{
         const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
         const camData=buildCamProfile(ci);
-        const realLift=Math.max(2,Math.min(camData.lift,6));
-        const[ftx,fty]=mproj(xOff,0,shZ+4+realLift+12);
+        const realLift=Math.max(7,camData.lift*1.5);
+        const[ftx,fty]=mproj(xOff,0,shZ+3+realLift+12);
         ctx.strokeStyle='rgba(196,164,74,.12)';ctx.lineWidth=0.6;ctx.setLineDash([2,5]);
         ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-10);ctx.stroke();ctx.setLineDash([]);
       });
