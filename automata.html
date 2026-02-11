@@ -1277,6 +1277,7 @@ function doGenerate(){
   }
   // Cams
   const nCams=motions.cam_count;
+  const camPositions=[];
   for(let ci=0;ci<nCams;ci++){
     const pieces=motions.motions.filter(m=>m.cam_index===ci);
     const maxAmp=pieces.length>0?Math.max(...pieces.map(m=>m.amplitude)):20;
@@ -1297,7 +1298,173 @@ function doGenerate(){
       allTris.push([[p1[0],y1,p1[1]+shaftZ],[p2[0],y1,p2[1]+shaftZ],[p2[0],y2,p2[1]+shaftZ]]);
       allTris.push([[p1[0],y1,p1[1]+shaftZ],[p2[0],y2,p2[1]+shaftZ],[p1[0],y2,p1[1]+shaftZ]]);
     }
+    camPositions.push({yPos,lift,camD});
   }
+
+  // ── Followers (cylindrical rods riding on cams) ──
+  const fR=1.2; // follower rod radius
+  const fSegs=12;
+  for(let ci=0;ci<nCams;ci++){
+    const cp=camPositions[ci];
+    const maxR=4+cp.lift;
+    const fLen=boxH-shaftZ+5; // extends above box
+    const fBottom=shaftZ+maxR;
+    const fTop=fBottom+fLen;
+    for(let i=0;i<fSegs;i++){
+      const a1=(i/fSegs)*Math.PI*2,a2=((i+1)/fSegs)*Math.PI*2;
+      const x1=fR*Math.cos(a1),x2=fR*Math.cos(a2);
+      const z1=fR*Math.sin(a1)+fBottom,z2=fR*Math.sin(a2)+fBottom;
+      const z1t=fR*Math.sin(a1)+fTop,z2t=fR*Math.sin(a2)+fTop;
+      // Cylinder wall
+      allTris.push([[x1,cp.yPos,z1],[x2,cp.yPos,z2],[x2,cp.yPos,z2t]]);
+      allTris.push([[x1,cp.yPos,z1],[x2,cp.yPos,z2t],[x1,cp.yPos,z1t]]);
+      // Top cap
+      allTris.push([[0,cp.yPos,fTop],[x1,cp.yPos,z1t],[x2,cp.yPos,z2t]]);
+      // Bottom cap
+      allTris.push([[0,cp.yPos,fBottom],[x2,cp.yPos,z2],[x1,cp.yPos,z1]]);
+    }
+  }
+
+  // ── T-bars (cross pieces at top of followers) ──
+  const tW=12,tH=1.5,tD=3;
+  for(let ci=0;ci<nCams;ci++){
+    const cp=camPositions[ci];
+    const maxR=4+cp.lift;
+    const tZ=shaftZ+maxR+(boxH-shaftZ+5); // top of follower
+    const htw=tW/2,hth=tH/2,htd=tD/2;
+    const y1=cp.yPos-htd,y2=cp.yPos+htd;
+    const tb=[[-htw,y1,tZ-hth],[htw,y1,tZ-hth],[htw,y2,tZ-hth],[-htw,y2,tZ-hth],
+              [-htw,y1,tZ+hth],[htw,y1,tZ+hth],[htw,y2,tZ+hth],[-htw,y2,tZ+hth]];
+    // Bottom
+    allTris.push([tb[0],tb[2],tb[1]],[tb[0],tb[3],tb[2]]);
+    // Top
+    allTris.push([tb[4],tb[5],tb[6]],[tb[4],tb[6],tb[7]]);
+    // Sides
+    [[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]].forEach(f=>{
+      allTris.push([tb[f[0]],tb[f[1]],tb[f[2]]],[tb[f[0]],tb[f[2]],tb[f[3]]]);
+    });
+  }
+
+  // ── Top plate with follower slots ──
+  const plateH=2;
+  const plateZ=boxH;
+  // Simple plate — 4 sub-rectangles around each slot
+  // For simplicity: solid plate then we skip (slots will be drilled in slicer or we make a plate with gaps)
+  // Make plate as single piece with rectangular holes for each follower
+  const slotW=fR*2+1,slotD=3;
+  // Top face
+  allTris.push([[-hw,-hd,plateZ+plateH],[hw,-hd,plateZ+plateH],[hw,hd,plateZ+plateH]]);
+  allTris.push([[-hw,-hd,plateZ+plateH],[ hw,hd,plateZ+plateH],[-hw,hd,plateZ+plateH]]);
+  // Bottom face
+  allTris.push([[-hw,-hd,plateZ],[hw,hd,plateZ],[hw,-hd,plateZ]]);
+  allTris.push([[-hw,-hd,plateZ],[-hw,hd,plateZ],[hw,hd,plateZ]]);
+  // Side walls of plate
+  [[[-hw,-hd],[hw,-hd]],[[hw,-hd],[hw,hd]],[[hw,hd],[-hw,hd]],[[-hw,hd],[-hw,-hd]]].forEach(([p1,p2])=>{
+    allTris.push([[p1[0],p1[1],plateZ],[p2[0],p2[1],plateZ],[p2[0],p2[1],plateZ+plateH]]);
+    allTris.push([[p1[0],p1[1],plateZ],[p2[0],p2[1],plateZ+plateH],[p1[0],p1[1],plateZ+plateH]]);
+  });
+
+  // ── Shaft bearings (support pillars) ──
+  const bR=4,bH=shaftZ,bSegs=16;
+  [-shaftLen/2,shaftLen/2].forEach(yb=>{
+    for(let i=0;i<bSegs;i++){
+      const a1=(i/bSegs)*Math.PI*2,a2=((i+1)/bSegs)*Math.PI*2;
+      const x1=bR*Math.cos(a1),x2=bR*Math.cos(a2);
+      const z1=bR*Math.sin(a1),z2=bR*Math.sin(a2);
+      // Cylinder from z=0 to z=bH
+      allTris.push([[x1,yb,z1],[x2,yb,z2],[x2,yb,z2+bH]]);
+      allTris.push([[x1,yb,z1],[x2,yb,z2+bH],[x1,yb,z1+bH]]);
+      // Top disc (around shaft hole)
+      if(Math.sqrt(x1*x1)>shaftR+0.5){
+        allTris.push([[0,yb,bH],[x2,yb,z2+bH],[x1,yb,z1+bH]]);
+      }
+    }
+  });
+
+  // ── Crank handle ──
+  const crankLen=15,crankR=1.5,crankSegs=10;
+  const crankY=-shaftLen/2-2;
+  // Horizontal arm
+  for(let i=0;i<crankSegs;i++){
+    const a1=(i/crankSegs)*Math.PI*2,a2=((i+1)/crankSegs)*Math.PI*2;
+    const dx1=crankR*Math.cos(a1),dz1=crankR*Math.sin(a1);
+    const dx2=crankR*Math.cos(a2),dz2=crankR*Math.sin(a2);
+    allTris.push([[dx1,crankY,dz1+shaftZ],[dx2,crankY,dz2+shaftZ],[dx2+crankLen,crankY,dz2+shaftZ]]);
+    allTris.push([[dx1,crankY,dz1+shaftZ],[dx2+crankLen,crankY,dz2+shaftZ],[dx1+crankLen,crankY,dz1+shaftZ]]);
+  }
+  // Handle knob
+  const knobR=3,knobSegs=12;
+  for(let i=0;i<knobSegs;i++){
+    const a1=(i/knobSegs)*Math.PI*2,a2=((i+1)/knobSegs)*Math.PI*2;
+    const x1=knobR*Math.cos(a1)+crankLen,x2=knobR*Math.cos(a2)+crankLen;
+    const z1=knobR*Math.sin(a1)+shaftZ,z2=knobR*Math.sin(a2)+shaftZ;
+    allTris.push([[x1,crankY-2,z1],[x2,crankY-2,z2],[x2,crankY+2,z2]]);
+    allTris.push([[x1,crankY-2,z1],[x2,crankY+2,z2],[x1,crankY+2,z1]]);
+    allTris.push([[crankLen,crankY-2,shaftZ],[x2,crankY-2,z2],[x1,crankY-2,z1]]);
+    allTris.push([[crankLen,crankY+2,shaftZ],[x1,crankY+2,z1],[x2,crankY+2,z2]]);
+  }
+
+  // ── Figurine pieces (extruded 2D shapes) ──
+  const figBaseZ=plateZ+plateH;
+  figurine.pieces.forEach((p,idx)=>{
+    const s=getShapeSize(p.shape);
+    const sc=p._scale||1;
+    const pw=s.w*sc*0.5,ph=s.h*sc*0.5; // half dimensions in mm
+    const depth=3; // figurine piece thickness
+    const px=p.position.x*0.5;
+    const pz=figBaseZ+10-p.position.y*0.5; // flip Y to Z
+    const py=-(p.layer||0)*depth*1.2; // layer → Y offset
+
+    if(p.shape.type==='circle'||p.shape.type==='ellipse'){
+      const rx=pw,ry=p.shape.type==='ellipse'?ph:pw;
+      const segs=20;
+      for(let i=0;i<segs;i++){
+        const a1=(i/segs)*Math.PI*2,a2=((i+1)/segs)*Math.PI*2;
+        const x1=rx*Math.cos(a1)+px,z1=ry*Math.sin(a1)+pz;
+        const x2=rx*Math.cos(a2)+px,z2=ry*Math.sin(a2)+pz;
+        // Front face
+        allTris.push([[px,py,pz],[x1,py,z1],[x2,py,z2]]);
+        // Back face
+        allTris.push([[px,py+depth,pz],[x2,py+depth,z2],[x1,py+depth,z1]]);
+        // Edge
+        allTris.push([[x1,py,z1],[x1,py+depth,z1],[x2,py+depth,z2]]);
+        allTris.push([[x1,py,z1],[x2,py+depth,z2],[x2,py,z2]]);
+      }
+    } else if(p.shape.type==='rect'||p.shape.type==='square'){
+      const verts=[[-pw+px,-ph+pz],[pw+px,-ph+pz],[pw+px,ph+pz],[-pw+px,ph+pz]];
+      // Front & back
+      allTris.push([[verts[0][0],py,verts[0][1]],[verts[1][0],py,verts[1][1]],[verts[2][0],py,verts[2][1]]]);
+      allTris.push([[verts[0][0],py,verts[0][1]],[verts[2][0],py,verts[2][1]],[verts[3][0],py,verts[3][1]]]);
+      allTris.push([[verts[0][0],py+depth,verts[0][1]],[verts[2][0],py+depth,verts[2][1]],[verts[1][0],py+depth,verts[1][1]]]);
+      allTris.push([[verts[0][0],py+depth,verts[0][1]],[verts[3][0],py+depth,verts[3][1]],[verts[2][0],py+depth,verts[2][1]]]);
+      // Edges
+      for(let i=0;i<4;i++){
+        const j=(i+1)%4;
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py,verts[j][1]],[verts[j][0],py+depth,verts[j][1]]]);
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py+depth,verts[j][1]],[verts[i][0],py+depth,verts[i][1]]]);
+      }
+    } else if(p.shape.type==='tri'){
+      const verts=[[px,ph+pz],[pw+px,-ph+pz],[-pw+px,-ph+pz]];
+      allTris.push([[verts[0][0],py,verts[0][1]],[verts[1][0],py,verts[1][1]],[verts[2][0],py,verts[2][1]]]);
+      allTris.push([[verts[0][0],py+depth,verts[0][1]],[verts[2][0],py+depth,verts[2][1]],[verts[1][0],py+depth,verts[1][1]]]);
+      for(let i=0;i<3;i++){
+        const j=(i+1)%3;
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py,verts[j][1]],[verts[j][0],py+depth,verts[j][1]]]);
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py+depth,verts[j][1]],[verts[i][0],py+depth,verts[i][1]]]);
+      }
+    } else if(p.shape.type==='diamond'){
+      const verts=[[px,ph+pz],[pw+px,pz],[px,-ph+pz],[-pw+px,pz]];
+      allTris.push([[verts[0][0],py,verts[0][1]],[verts[1][0],py,verts[1][1]],[verts[2][0],py,verts[2][1]]]);
+      allTris.push([[verts[0][0],py,verts[0][1]],[verts[2][0],py,verts[2][1]],[verts[3][0],py,verts[3][1]]]);
+      allTris.push([[verts[0][0],py+depth,verts[0][1]],[verts[2][0],py+depth,verts[2][1]],[verts[1][0],py+depth,verts[1][1]]]);
+      allTris.push([[verts[0][0],py+depth,verts[0][1]],[verts[3][0],py+depth,verts[3][1]],[verts[2][0],py+depth,verts[2][1]]]);
+      for(let i=0;i<4;i++){
+        const j=(i+1)%4;
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py,verts[j][1]],[verts[j][0],py+depth,verts[j][1]]]);
+        allTris.push([[verts[i][0],py,verts[i][1]],[verts[j][0],py+depth,verts[j][1]],[verts[i][0],py+depth,verts[i][1]]]);
+      }
+    }
+  });
   const stlBlob=buildSTL(allTris);
   const url=URL.createObjectURL(stlBlob);
   const a=document.createElement('a');a.href=url;a.download=`automata_${figurine.name.replace(/[^a-zA-Z0-9]/g,'_')}.stl`;a.click();URL.revokeObjectURL(url);
