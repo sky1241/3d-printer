@@ -1115,6 +1115,7 @@ function selectPiece(id){
   highlightSelected3D();
 }
 function toggleMovable(id){
+  if(!figurine) return;
   const p=figurine.pieces.find(p=>p.id===id);
   if(p){p.movable=!p.movable;renderPiecesList();rebuildAll3D();}
 }
@@ -1125,14 +1126,15 @@ function toggleMovable(id){
 function setShape(type){
   document.querySelectorAll('.shape-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('sh_'+type)?.classList.add('active');
-  if(selectedPiece && figurine){
+  if(!figurine) return;
+  const defaults={circle:{type:'circle',r:15},rect:{type:'rect',w:30,h:20},tri:{type:'tri',base:20,h:18},square:{type:'square',s:20},ellipse:{type:'ellipse',rx:25,ry:15},diamond:{type:'diamond',w:20,h:25}};
+  if(selectedPiece){
     const p=figurine.pieces.find(pp=>pp.id===selectedPiece);
-    if(p){
-      const defaults={circle:{type:'circle',r:15},rect:{type:'rect',w:30,h:20},tri:{type:'tri',base:20,h:18},square:{type:'square',s:20},ellipse:{type:'ellipse',rx:25,ry:15},diamond:{type:'diamond',w:20,h:25}};
-      p.shape=defaults[type]||p.shape;
-      renderPiecesList();rebuildAll3D();
-    }
+    if(p){p.shape=defaults[type]||p.shape;}
+  } else {
+    figurine.pieces.forEach(p=>{p.shape=defaults[type]||p.shape;});
   }
+  renderPiecesList();rebuildAll3D();
 }
 function setMotion(type){
   document.querySelectorAll('.motion-btn').forEach(b=>b.classList.remove('active'));
@@ -1150,7 +1152,8 @@ function setMotion(type){
 }
 function setPhase(deg){
   document.querySelectorAll('.phase-row .phase-btn').forEach(b=>b.classList.remove('on'));
-  event.target.classList.add('on');
+  if(event&&event.target) event.target.classList.add('on');
+  else document.querySelectorAll('.phase-row .phase-btn').forEach(b=>{if(b.textContent===deg+'°')b.classList.add('on');});
   if(motions){
     if(selectedPiece){
       const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
@@ -1162,7 +1165,8 @@ function setPhase(deg){
 }
 function setProfile(prof){
   document.querySelectorAll('.profile-row .prof-btn').forEach(b=>b.classList.remove('on'));
-  event.target.classList.add('on');
+  if(event&&event.target) event.target.classList.add('on');
+  else document.querySelectorAll('.profile-row .prof-btn').forEach(b=>{if(b.textContent.toLowerCase()===prof)b.classList.add('on');});
   if(motions){
     if(selectedPiece){
       const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
@@ -1177,6 +1181,7 @@ function setProfile(prof){
 function setPivot(piv){
   document.querySelectorAll('.pivot-row .phase-btn').forEach(b=>b.classList.remove('on'));
   if(event&&event.target) event.target.classList.add('on');
+  else{const labels={top:'↑ Haut',center:'⊕ Centre',bottom:'↓ Bas',left:'← Gauche',right:'→ Droite'};document.querySelectorAll('.pivot-row .phase-btn').forEach(b=>{if(b.textContent===labels[piv])b.classList.add('on');});}
   if(motions){
     if(selectedPiece){
       const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
