@@ -1369,7 +1369,7 @@ function animate(){
 
       const spd=m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.2;
       const phase=(m.phase||0)*Math.PI/180;
-      const cycle=(t*spd+phase)%(Math.PI*2);
+      const cycle=(t*0.3*spd+phase)%(Math.PI*2); // sync with cam rotation speed
 
       // PROFILE — each one produces a COMPLETELY DIFFERENT wave shape
       let wave;
@@ -1393,31 +1393,32 @@ function animate(){
       const amp=Math.max(m.amplitude||30, 20);
 
       if(m.motion==='TRANSLATE_V'){
-        mesh.position.y=orig.y + wave*amp*0.6;
+        mesh.position.y=orig.y + wave*amp*0.7;
       } else if(m.motion==='TRANSLATE_H'){
-        mesh.position.x=orig.x + wave*amp*0.5;
+        mesh.position.x=orig.x + wave*amp*0.6;
       } else if(m.motion==='OSCILLATE'){
-        mesh.rotation.z=origR + wave*(amp*Math.PI/100);
+        mesh.rotation.z=origR + wave*(amp*Math.PI/80); // very visible swing
       } else if(m.motion==='ROTATE'){
-        mesh.rotation.z=t*spd;
+        mesh.rotation.z=cycle;
       }
     });
   }
 
   // ── MECHANISM ANIMATION ──
   if(mechGroup){
+    const camT=t*0.3; // slow enough to see profile, fast enough to see motion
     mechGroup.children.forEach(mesh=>{
       if(mesh.userData.isCam){
-        mesh.rotation.z=(mesh.userData.camRotOffset||0)+t*0.8;
+        mesh.rotation.z=(mesh.userData.camRotOffset||0)+camT;
       }
       if(mesh.userData.isFollower||mesh.userData.isTbar){
         const camData=mesh.userData.camData;
         if(camData){
-          const rot=(mesh.userData.camRotOffset||0)+t*0.8;
+          const rot=(mesh.userData.camRotOffset||0)+camT;
           const angle=((rot+Math.PI*1.5)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
           const r=realCamRadiusSTL(angle,camData);
-          const lift=(r-(camData.base_radius_mm||4));
-          mesh.position.y=mesh.userData.baseY + lift*2.0; // big visible bounce
+          const lift=(r-(camData.base_radius_mm||8));
+          mesh.position.y=mesh.userData.baseY + lift*2.0;
         }
       }
     });
@@ -1591,13 +1592,13 @@ function buildMechanism3D(){
     const prof=pieces.length>0?pieces[0].cam_profile:'smooth';
     const mot=pieces.length>0?pieces[0].motion:'OSCILLATE';
     let lift;
-    if(mot==='ROTATE') lift=3;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.4;else lift=15*Math.sin(maxAmp*Math.PI/180);
-    lift=Math.max(2,Math.min(lift,8));
-    const camD={base_radius_mm:4,lift_mm:lift,profile:prof};
+    if(mot==='ROTATE') lift=5;else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.5;else lift=15*Math.sin(maxAmp*Math.PI/180);
+    lift=Math.max(4,Math.min(lift,12));
+    const camD={base_radius_mm:8,lift_mm:lift,profile:prof};
     const zPos=(ci-(nCams-1)/2)*(shLen*0.6/Math.max(nCams-1,1));
-    const thick=4;
+    const thick=5;
 
-    // Cam shape
+    // Cam shape — big visible profile
     const shape=new THREE.Shape();
     for(let i=0;i<=72;i++){
       const a=(i/72)*Math.PI*2;const r=realCamRadiusSTL(a,camD);
@@ -1611,17 +1612,19 @@ function buildMechanism3D(){
     }
     shape.holes.push(hole);
     const camGeo=new THREE.ExtrudeGeometry(shape,{depth:thick,bevelEnabled:false});
+    // Center the extrusion
+    camGeo.translate(0,0,-thick/2);
     const camMat=new THREE.MeshPhongMaterial({color:camColors[ci],shininess:30});
     const camMesh=new THREE.Mesh(camGeo,camMat);
-    camMesh.rotation.x=Math.PI/2;
-    camMesh.position.set(0,shZ,zPos-thick/2);
+    // NO rotation.x! Cam face is in XY, shaft goes through Z — rotation.z spins around shaft
+    camMesh.position.set(0,shZ,zPos);
     camMesh.userData={isCam:true,camRotOffset:ci*Math.PI*0.3};
     camMesh.castShadow=true;
     mechGroup.add(camMesh);
 
     // Follower
-    const maxR=4+lift;
-    const fLen=boxH-shZ-maxR+10;
+    const maxR=8+lift;
+    const fLen=boxH-shZ-maxR+12;
     const fGeo=new THREE.CylinderGeometry(1.5,1.5,fLen,8);
     const fMat=new THREE.MeshPhongMaterial({color:0xC4A44A,shininess:50});
     const f=new THREE.Mesh(fGeo,fMat);
