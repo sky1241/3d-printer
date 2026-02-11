@@ -1021,11 +1021,32 @@ function selectPiece(id){
   if(selectedPiece && motions){
     const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
     if(m){
+      // Sync motion type
       document.querySelectorAll('.motion-btn').forEach(b=>b.classList.remove('active'));
       const moId={TRANSLATE_V:'mo_tv',TRANSLATE_H:'mo_th',OSCILLATE:'mo_osc',ROTATE:'mo_rot'}[m.motion];
-      if(moId)document.getElementById(moId)?.classList.add('active');
-      document.getElementById('slAmp').value=m.amplitude;
-      updateParam();
+      if(moId) document.getElementById(moId)?.classList.add('active');
+
+      // Sync amplitude
+      document.getElementById('slAmp').value=m.amplitude||30;
+      document.getElementById('valAmp').textContent=(m.amplitude||30)+'°';
+
+      // Sync speed
+      const speeds=[0.25,0.5,1,1.5,2,3];
+      const spdVal=m.speed==='slow'?2:m.speed==='fast'?5:3;
+      document.getElementById('slSpeed').value=spdVal;
+      document.getElementById('valSpeed').textContent=speeds[spdVal-1]+' Hz';
+
+      // Sync profile
+      document.querySelectorAll('.profile-row .prof-btn').forEach(b=>b.classList.remove('on'));
+      document.querySelectorAll('.profile-row .prof-btn').forEach(b=>{
+        if(b.textContent.toLowerCase()===m.cam_profile) b.classList.add('on');
+      });
+
+      // Sync phase
+      document.querySelectorAll('.phase-row .phase-btn').forEach(b=>b.classList.remove('on'));
+      document.querySelectorAll('.phase-row .phase-btn').forEach(b=>{
+        if(b.textContent===m.phase+'°') b.classList.add('on');
+      });
     }
   }
   highlightSelected3D();
@@ -1054,35 +1075,52 @@ function setMotion(type){
   document.querySelectorAll('.motion-btn').forEach(b=>b.classList.remove('active'));
   const moId={TRANSLATE_V:'mo_tv',TRANSLATE_H:'mo_th',OSCILLATE:'mo_osc',ROTATE:'mo_rot'}[type];
   if(moId) document.getElementById(moId)?.classList.add('active');
-  if(selectedPiece && motions){
-    const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-    if(m) m.motion=type;
+  if(motions){
+    if(selectedPiece){
+      const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
+      if(m) m.motion=type;
+    } else {
+      motions.motions.forEach(m=>m.motion=type);
+    }
   }
   rebuildAll3D();
 }
 function setPhase(deg){
   document.querySelectorAll('.phase-row .phase-btn').forEach(b=>b.classList.remove('on'));
   event.target.classList.add('on');
-  if(selectedPiece && motions){
-    const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-    if(m) m.phase=deg;
+  if(motions){
+    if(selectedPiece){
+      const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
+      if(m) m.phase=deg;
+    } else {
+      motions.motions.forEach(m=>m.phase=deg);
+    }
   }
 }
 function setProfile(prof){
   document.querySelectorAll('.profile-row .prof-btn').forEach(b=>b.classList.remove('on'));
   event.target.classList.add('on');
-  if(selectedPiece && motions){
-    const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-    if(m) m.cam_profile=prof;
+  if(motions){
+    if(selectedPiece){
+      const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
+      if(m) m.cam_profile=prof;
+    } else {
+      // No piece selected → apply to ALL
+      motions.motions.forEach(m=>m.cam_profile=prof);
+    }
   }
   rebuildAll3D();
 }
 function setPivot(piv){
   document.querySelectorAll('.pivot-row .phase-btn, .phase-row:last-of-type .phase-btn').forEach(b=>b.classList.remove('on'));
   if(event&&event.target) event.target.classList.add('on');
-  if(selectedPiece && motions){
-    const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-    if(m) m.pivot=piv;
+  if(motions){
+    if(selectedPiece){
+      const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
+      if(m) m.pivot=piv;
+    } else {
+      motions.motions.forEach(m=>m.pivot=piv);
+    }
   }
   rebuildAll3D();
 }
@@ -1094,13 +1132,22 @@ function updateParam(){
   document.getElementById('valAmp').textContent=amp+'°';
   document.getElementById('valSpeed').textContent=speeds[spd-1]+' Hz';
   document.getElementById('valSize').textContent=sz+'%';
-  if(selectedPiece && motions){
-    const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-    if(m){m.amplitude=+amp;m.speed=speeds[spd-1]<=0.5?'slow':speeds[spd-1]<=1.5?'medium':'fast';}
+  if(motions){
+    const spdName=speeds[spd-1]<=0.5?'slow':speeds[spd-1]<=1.5?'medium':'fast';
+    if(selectedPiece){
+      const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
+      if(m){m.amplitude=+amp;m.speed=spdName;}
+    } else {
+      motions.motions.forEach(m=>{m.amplitude=+amp;m.speed=spdName;});
+    }
   }
-  if(selectedPiece && figurine){
-    const p=figurine.pieces.find(pp=>pp.id===selectedPiece);
-    if(p) p._scale=(+sz)/100;
+  if(figurine){
+    if(selectedPiece){
+      const p=figurine.pieces.find(pp=>pp.id===selectedPiece);
+      if(p) p._scale=(+sz)/100;
+    } else {
+      figurine.pieces.forEach(p=>p._scale=(+sz)/100);
+    }
   }
   rebuildAll3D();
 }
@@ -1284,7 +1331,7 @@ function animate(){
   animFrame++;
   const t=animFrame*0.03;
 
-  // Animate figurine pieces with VISIBLE motion
+  // ── FIGURINE ANIMATION ──
   if(figGroup && motions){
     figGroup.children.forEach(mesh=>{
       const pid=mesh.userData.pieceId;
@@ -1295,51 +1342,57 @@ function animate(){
       const origR=mesh.userData.origRot||0;
       if(!orig) return;
 
-      const spd=m.speed==='slow'?0.6:m.speed==='fast'?2.5:1.2;
+      const spd=m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.2;
       const phase=(m.phase||0)*Math.PI/180;
-      const raw=Math.sin(t*spd+phase);
+      const cycle=(t*spd+phase)%(Math.PI*2);
 
-      // Apply cam profile to wave shape
-      let prof;
-      if(m.cam_profile==='sharp') prof=Math.sign(raw)*Math.pow(Math.abs(raw),0.3);
-      else if(m.cam_profile==='dwell') prof=raw>0.3?1:raw<-0.3?-1:raw*3.33;
-      else prof=raw; // smooth
+      // PROFILE — each one produces a COMPLETELY DIFFERENT wave shape
+      let wave;
+      if(m.cam_profile==='sharp'){
+        // TRIANGLE WAVE: linear up then linear down, fast transitions
+        const p=cycle/(Math.PI*2); // 0→1
+        wave=p<0.25? p*4 : p<0.75? 2-p*4 : p*4-4; // -1 to +1 triangle
+      } else if(m.cam_profile==='dwell'){
+        // SQUARE WAVE: snap up, hold, snap down, hold
+        const p=cycle/(Math.PI*2);
+        if(p<0.05) wave=p*20; // quick rise
+        else if(p<0.45) wave=1; // HOLD UP
+        else if(p<0.55) wave=1-(p-0.45)*20; // quick fall
+        else if(p<0.95) wave=-1; // HOLD DOWN 
+        else wave=-1+(p-0.95)*20; // quick rise back
+      } else {
+        // SMOOTH: gentle sine
+        wave=Math.sin(cycle);
+      }
 
-      const amp=Math.max(m.amplitude||30, 15); // minimum 15 for visibility
+      const amp=Math.max(m.amplitude||30, 20);
 
       if(m.motion==='TRANSLATE_V'){
-        mesh.position.y=orig.y+prof*amp*0.5;
+        mesh.position.y=orig.y + wave*amp*0.6;
       } else if(m.motion==='TRANSLATE_H'){
-        mesh.position.x=orig.x+prof*amp*0.4;
+        mesh.position.x=orig.x + wave*amp*0.5;
       } else if(m.motion==='OSCILLATE'){
-        mesh.rotation.z=origR+prof*amp*Math.PI/120; // exaggerated for visibility
+        mesh.rotation.z=origR + wave*(amp*Math.PI/100);
       } else if(m.motion==='ROTATE'){
         mesh.rotation.z=t*spd;
       }
     });
   }
 
-  // Animate mechanism: cams rotate, followers bounce
+  // ── MECHANISM ANIMATION ──
   if(mechGroup){
     mechGroup.children.forEach(mesh=>{
       if(mesh.userData.isCam){
-        mesh.rotation.z=(mesh.userData.camRotOffset||0)+t;
+        mesh.rotation.z=(mesh.userData.camRotOffset||0)+t*0.8;
       }
-      if(mesh.userData.isFollower){
+      if(mesh.userData.isFollower||mesh.userData.isTbar){
         const camData=mesh.userData.camData;
         if(camData){
-          const angle=((t)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+          const rot=(mesh.userData.camRotOffset||0)+t*0.8;
+          const angle=((rot+Math.PI*1.5)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
           const r=realCamRadiusSTL(angle,camData);
-          const baseY=mesh.userData.baseY;
-          mesh.position.y=baseY+(r-(camData.base_radius_mm||4))*1.2;
-        }
-      }
-      if(mesh.userData.isTbar){
-        const camData=mesh.userData.camData;
-        if(camData){
-          const angle=((t)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
-          const r=realCamRadiusSTL(angle,camData);
-          mesh.position.y=mesh.userData.baseY+(r-(camData.base_radius_mm||4))*1.2;
+          const lift=(r-(camData.base_radius_mm||4));
+          mesh.position.y=mesh.userData.baseY + lift*2.0; // big visible bounce
         }
       }
     });
@@ -1548,7 +1601,7 @@ function buildMechanism3D(){
     const fMat=new THREE.MeshPhongMaterial({color:0xC4A44A,shininess:50});
     const f=new THREE.Mesh(fGeo,fMat);
     f.position.set(0,shZ+maxR+fLen/2,zPos);
-    f.userData={isFollower:true,camIndex:ci,camData:camD,baseY:shZ+maxR+fLen/2};
+    f.userData={isFollower:true,camIndex:ci,camData:camD,baseY:shZ+maxR+fLen/2,camRotOffset:ci*Math.PI*0.3};
     mechGroup.add(f);
 
     // T-bar
@@ -1556,7 +1609,7 @@ function buildMechanism3D(){
     const t=new THREE.Mesh(tGeo,fMat);
     const tbarY=shZ+maxR+fLen;
     t.position.set(0,tbarY,zPos);
-    t.userData={isTbar:true,camData:camD,baseY:tbarY};
+    t.userData={isTbar:true,camData:camD,baseY:tbarY,camRotOffset:ci*Math.PI*0.3};
     mechGroup.add(t);
 
     // Cam label (sprite)
