@@ -1414,10 +1414,19 @@ function animate(){
 
   // ── MECHANISM ANIMATION ──
   if(mechGroup){
-    // Use global speed from first motion or slider
-    const globalHz=motions&&motions.motions.length?motions.motions[0].speedHz||1:1;
-    const camT=t*0.3*globalHz*1.2;
+    // Build per-cam speed lookup from motions
+    const camHz={};
+    if(motions&&motions.motions.length){
+      motions.motions.forEach(m=>{
+        const ci=m.cam_index||0;
+        camHz[ci]=m.speedHz||(m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.0);
+      });
+    }
     mechGroup.children.forEach(mesh=>{
+      const ci=mesh.userData.camIndex;
+      if(ci===undefined&&!mesh.userData.isCam&&!mesh.userData.isFollower&&!mesh.userData.isTbar) return;
+      const hz=camHz[ci]||1;
+      const camT=t*0.3*hz*1.2;
       if(mesh.userData.isCam){
         mesh.rotation.z=(mesh.userData.camRotOffset||0)+camT;
       }
@@ -1628,7 +1637,7 @@ function buildMechanism3D(){
     const camMesh=new THREE.Mesh(camGeo,camMat);
     // NO rotation.x! Cam face is in XY, shaft goes through Z — rotation.z spins around shaft
     camMesh.position.set(0,shZ,zPos);
-    camMesh.userData={isCam:true,camRotOffset:ci*Math.PI*0.3};
+    camMesh.userData={isCam:true,camIndex:ci,camRotOffset:ci*Math.PI*0.3};
     camMesh.castShadow=true;
     mechGroup.add(camMesh);
 
@@ -1647,7 +1656,7 @@ function buildMechanism3D(){
     const t=new THREE.Mesh(tGeo,fMat);
     const tbarY=shZ+maxR+fLen;
     t.position.set(0,tbarY,zPos);
-    t.userData={isTbar:true,camData:camD,baseY:tbarY,camRotOffset:ci*Math.PI*0.3};
+    t.userData={isTbar:true,camIndex:ci,camData:camD,baseY:tbarY,camRotOffset:ci*Math.PI*0.3};
     mechGroup.add(t);
 
     // Cam label (sprite)
