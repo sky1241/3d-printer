@@ -1053,9 +1053,16 @@ function selectPiece(id){
 
       // Sync speed
       const speeds=[0.25,0.5,1,1.5,2,3];
-      const spdVal=m.speed==='slow'?2:m.speed==='fast'?5:3;
-      document.getElementById('slSpeed').value=spdVal;
-      document.getElementById('valSpeed').textContent=speeds[spdVal-1]+' Hz';
+      let spdIdx;
+      if(m.speedHz){
+        spdIdx=speeds.indexOf(m.speedHz);
+        if(spdIdx===-1) spdIdx=speeds.findIndex(s=>s>=m.speedHz)||2;
+        spdIdx+=1;
+      } else {
+        spdIdx=m.speed==='slow'?2:m.speed==='fast'?5:3;
+      }
+      document.getElementById('slSpeed').value=spdIdx;
+      document.getElementById('valSpeed').textContent=speeds[spdIdx-1]+' Hz';
 
       // Sync profile
       document.querySelectorAll('.profile-row .prof-btn').forEach(b=>b.classList.remove('on'));
@@ -1154,12 +1161,13 @@ function updateParam(){
   document.getElementById('valSpeed').textContent=speeds[spd-1]+' Hz';
   document.getElementById('valSize').textContent=sz+'%';
   if(motions){
-    const spdName=speeds[spd-1]<=0.5?'slow':speeds[spd-1]<=1.5?'medium':'fast';
+    const hzVal=speeds[spd-1];
+    const spdName=hzVal<=0.5?'slow':hzVal<=1.5?'medium':'fast';
     if(selectedPiece){
       const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
-      if(m){m.amplitude=+amp;m.speed=spdName;}
+      if(m){m.amplitude=+amp;m.speed=spdName;m.speedHz=hzVal;}
     } else {
-      motions.motions.forEach(m=>{m.amplitude=+amp;m.speed=spdName;});
+      motions.motions.forEach(m=>{m.amplitude=+amp;m.speed=spdName;m.speedHz=hzVal;});
     }
   }
   if(figurine){
@@ -1367,9 +1375,9 @@ function animate(){
       const origR=mesh.userData.origRot||0;
       if(!orig) return;
 
-      const spd=m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.2;
+      const spd=m.speedHz||(m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.0);
       const phase=(m.phase||0)*Math.PI/180;
-      const cycle=(t*0.3*spd+phase)%(Math.PI*2); // sync with cam rotation speed
+      const cycle=(t*0.3*spd*1.2+phase)%(Math.PI*2); // Hz-proportional speed
 
       // PROFILE — each one produces a COMPLETELY DIFFERENT wave shape
       let wave;
@@ -1406,7 +1414,9 @@ function animate(){
 
   // ── MECHANISM ANIMATION ──
   if(mechGroup){
-    const camT=t*0.3; // slow enough to see profile, fast enough to see motion
+    // Use global speed from first motion or slider
+    const globalHz=motions&&motions.motions.length?motions.motions[0].speedHz||1:1;
+    const camT=t*0.3*globalHz*1.2;
     mechGroup.children.forEach(mesh=>{
       if(mesh.userData.isCam){
         mesh.rotation.z=(mesh.userData.camRotOffset||0)+camT;
