@@ -6,7 +6,6 @@
 <title>🔩 Automata Generator V7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;0,9..40,900;1,9..40,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -337,6 +336,28 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
 </div><!-- /app -->
 
 <script>
+// Dynamic Three.js loader
+let threeLoaded=false;
+function loadThreeJS(){
+  return new Promise((resolve,reject)=>{
+    if(typeof THREE!=='undefined'){threeLoaded=true;resolve();return;}
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    s.onload=()=>{threeLoaded=true;resolve();};
+    s.onerror=()=>{
+      // Try alternate CDN
+      const s2=document.createElement('script');
+      s2.src='https://unpkg.com/three@0.128.0/build/three.min.js';
+      s2.onload=()=>{threeLoaded=true;resolve();};
+      s2.onerror=reject;
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
+  });
+}
+// Start loading immediately
+loadThreeJS();
+
 /* ═══════════════════════════════════════════
    STATE
    ═══════════════════════════════════════════ */
@@ -1238,7 +1259,11 @@ let scene,camera,renderer,figGroup,mechGroup,clock;
 let rotY=0.6,rotX=-0.3,isDrag=false,lmx=0,lmy=0;
 let animFrame=0;
 
-function startRenderer(){
+async function startRenderer(){
+  // Wait for Three.js to load
+  if(typeof THREE==='undefined'){
+    try{await loadThreeJS();}catch(e){console.error('Three.js failed to load',e);return;}
+  }
   // Hide 2D canvas, show 3D
   document.getElementById('mainCanvas').style.display='none';
   const container=document.getElementById('mechView3D');
@@ -1639,7 +1664,7 @@ function buildMechanism3D(){
 }
 
 function rebuildAll3D(){
-  if(!scene) return;
+  if(!scene||typeof THREE==='undefined') return;
   buildFigurine3D();
   buildMechanism3D();
 }
