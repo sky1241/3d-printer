@@ -1192,15 +1192,8 @@ function startRenderer(){
       const sx=figCX+px+animX, sy=figCY+py+animY;
       const rw=sz.w*mmPx, rh=sz.h*mmPx;
 
-      // SOLID PLA look — opaque fill, subtle edge
-      const plaBase=p.movable?'#D4A574':'#E8D5B8'; // movable pieces slightly darker
-      const plaEdge=p.movable?'#B8875A':'#CCBA98';
-      const selEdge=isSel?c:'#A0906E';
-
-      ctx.fillStyle=isSel?plaBase:plaBase;
-      ctx.strokeStyle=isSel?c:plaEdge;
-      ctx.lineWidth=isSel?2.5:1.2;
-      if(isSel){ctx.shadowColor=c;ctx.shadowBlur=10;}
+      ctx.strokeStyle=c;ctx.fillStyle=c+(isSel?'28':'12');ctx.lineWidth=isSel?2.5:1.5;
+      if(isSel){ctx.shadowColor=c;ctx.shadowBlur=14;}
 
       ctx.save();ctx.translate(sx,sy);
       const totalRot=(p.rotation||0)*Math.PI/180+animRot;
@@ -1214,15 +1207,15 @@ function startRenderer(){
       else if(p.shape.type==='diamond'){ctx.moveTo(0,-rh/2);ctx.lineTo(rw/2,0);ctx.lineTo(0,rh/2);ctx.lineTo(-rw/2,0);}
       ctx.closePath();ctx.fill();ctx.stroke();ctx.shadowBlur=0;
 
-      // Label — dark on light PLA
-      ctx.fillStyle='rgba(60,40,20,.6)';ctx.font=`600 ${Math.max(7,8*zoom)}px 'DM Sans'`;ctx.textAlign='center';
+      // Label
+      ctx.fillStyle=c+'BB';ctx.font=`600 ${Math.max(7,8*zoom)}px 'DM Sans'`;ctx.textAlign='center';
       ctx.fillText(p.name,0,-rh/2-4);
-      if(p.movable){ctx.fillStyle='rgba(200,100,30,.5)';ctx.font=`${7*zoom}px 'JetBrains Mono'`;ctx.fillText('⚡',rw/2+4,3);}
+      if(p.movable){ctx.fillStyle=c+'70';ctx.font=`${7*zoom}px 'JetBrains Mono'`;ctx.fillText('⚡',rw/2+4,3);}
       ctx.restore();
 
       if(explode&&p.parent!=='root'){
         const pp=figurine.pieces.find(pi=>pi.id===p.parent);
-        if(pp){ctx.strokeStyle='rgba(180,140,80,.3)';ctx.lineWidth=0.8;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(figCX+pp.position.x*mmPx*1.5,figCY+pp.position.y*mmPx*1.5);ctx.stroke();ctx.setLineDash([]);}
+        if(pp){ctx.strokeStyle=c+'25';ctx.lineWidth=0.8;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(figCX+pp.position.x*mmPx*1.5,figCY+pp.position.y*mmPx*1.5);ctx.stroke();ctx.setLineDash([]);}
       }
     });
 
