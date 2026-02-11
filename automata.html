@@ -134,6 +134,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
 .loading{display:flex;align-items:center;gap:6px;padding:8px 12px;font-size:.7rem;color:var(--ac)}
 .loading .spin{width:14px;height:14px;border:2px solid var(--s3);border-top-color:var(--ac);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 
 /* AI Response preview */
 .ai-response{padding:6px 10px;font-size:.6rem;color:var(--ok);font-family:'JetBrains Mono';background:rgba(52,211,153,.04);border-radius:6px;margin:4px 12px;max-height:60px;overflow-y:auto;border:1px solid rgba(52,211,153,.08)}
@@ -1126,7 +1127,11 @@ function toggleMovable(id){
 function setShape(type){
   document.querySelectorAll('.shape-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('sh_'+type)?.classList.add('active');
-  if(!figurine) return;
+  if(!figurine){
+    const btn=document.getElementById('sh_'+type);
+    if(btn){btn.style.animation='none';btn.offsetHeight;btn.style.animation='shake 0.3s';setTimeout(()=>btn.style.animation='',300);}
+    return;
+  }
   const defaults={circle:{type:'circle',r:15},rect:{type:'rect',w:30,h:20},tri:{type:'tri',base:20,h:18},square:{type:'square',s:20},ellipse:{type:'ellipse',rx:25,ry:15},diamond:{type:'diamond',w:20,h:25}};
   if(selectedPiece){
     const p=figurine.pieces.find(pp=>pp.id===selectedPiece);
