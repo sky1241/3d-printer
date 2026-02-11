@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🔩 Automata Generator V5</title>
+<title>🔩 Automata Generator V7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;0,9..40,900;1,9..40,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -158,7 +158,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
 <div class="topbar">
   <div class="topbar-icon">🔩</div>
   <h1>Automata Generator</h1>
-  <span class="topbar-tag mono">V5</span>
+  <span class="topbar-tag mono">V7</span>
   <div class="topbar-drive">
     <div class="drive-chip on-b" id="dCrank" onclick="setDrive(0)"><span>🖐️</span> Manivelle</div>
     <div class="drive-chip" id="dMotor" onclick="setDrive(1)"><span>⚡</span> Moteur</div>
@@ -1078,10 +1078,13 @@ function setProfile(prof){
   rebuildAll3D();
 }
 function setPivot(piv){
+  document.querySelectorAll('.pivot-row .phase-btn, .phase-row:last-of-type .phase-btn').forEach(b=>b.classList.remove('on'));
+  if(event&&event.target) event.target.classList.add('on');
   if(selectedPiece && motions){
     const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
     if(m) m.pivot=piv;
   }
+  rebuildAll3D();
 }
 function updateParam(){
   const amp=document.getElementById('slAmp').value;
@@ -1279,9 +1282,9 @@ function updateCamera(){
 function animate(){
   requestAnimationFrame(animate);
   animFrame++;
-  const t=animFrame*0.025; // time for animation
+  const t=animFrame*0.03;
 
-  // Animate figurine pieces
+  // Animate figurine pieces with VISIBLE motion
   if(figGroup && motions){
     figGroup.children.forEach(mesh=>{
       const pid=mesh.userData.pieceId;
@@ -1292,39 +1295,51 @@ function animate(){
       const origR=mesh.userData.origRot||0;
       if(!orig) return;
 
-      const spd=m.speed==='slow'?0.5:m.speed==='fast'?2:1;
-      const phase=m.phase*Math.PI/180;
-      const val=Math.sin(t*spd+phase);
-      const prof=m.cam_profile==='sharp'?Math.sign(val)*Math.pow(Math.abs(val),0.5):m.cam_profile==='dwell'?Math.round(val*3)/3:val;
+      const spd=m.speed==='slow'?0.6:m.speed==='fast'?2.5:1.2;
+      const phase=(m.phase||0)*Math.PI/180;
+      const raw=Math.sin(t*spd+phase);
+
+      // Apply cam profile to wave shape
+      let prof;
+      if(m.cam_profile==='sharp') prof=Math.sign(raw)*Math.pow(Math.abs(raw),0.3);
+      else if(m.cam_profile==='dwell') prof=raw>0.3?1:raw<-0.3?-1:raw*3.33;
+      else prof=raw; // smooth
+
+      const amp=Math.max(m.amplitude||30, 15); // minimum 15 for visibility
 
       if(m.motion==='TRANSLATE_V'){
-        mesh.position.y=orig.y+prof*m.amplitude*0.15;
+        mesh.position.y=orig.y+prof*amp*0.5;
       } else if(m.motion==='TRANSLATE_H'){
-        mesh.position.x=orig.x+prof*m.amplitude*0.15;
+        mesh.position.x=orig.x+prof*amp*0.4;
       } else if(m.motion==='OSCILLATE'){
-        const amp=m.amplitude*Math.PI/180;
-        if(m.pivot==='top') mesh.rotation.z=origR+prof*amp;
-        else if(m.pivot==='bottom') mesh.rotation.z=origR-prof*amp;
-        else if(m.pivot==='left') mesh.rotation.z=origR+prof*amp;
-        else mesh.rotation.z=origR+prof*amp;
+        mesh.rotation.z=origR+prof*amp*Math.PI/120; // exaggerated for visibility
       } else if(m.motion==='ROTATE'){
         mesh.rotation.z=t*spd;
       }
     });
   }
 
-  // Animate mechanism cams
+  // Animate mechanism: cams rotate, followers bounce
   if(mechGroup){
     mechGroup.children.forEach(mesh=>{
-      if(mesh.userData.isCam) mesh.rotation.z=(mesh.userData.camRotOffset||0)+t;
+      if(mesh.userData.isCam){
+        mesh.rotation.z=(mesh.userData.camRotOffset||0)+t;
+      }
       if(mesh.userData.isFollower){
-        const ci=mesh.userData.camIndex;
         const camData=mesh.userData.camData;
         if(camData){
-          const angle=t+Math.PI*1.5;
+          const angle=((t)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
           const r=realCamRadiusSTL(angle,camData);
           const baseY=mesh.userData.baseY;
-          mesh.position.y=baseY+(r-camData.base_radius_mm)*0.5;
+          mesh.position.y=baseY+(r-(camData.base_radius_mm||4))*1.2;
+        }
+      }
+      if(mesh.userData.isTbar){
+        const camData=mesh.userData.camData;
+        if(camData){
+          const angle=((t)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+          const r=realCamRadiusSTL(angle,camData);
+          mesh.position.y=mesh.userData.baseY+(r-(camData.base_radius_mm||4))*1.2;
         }
       }
     });
@@ -1382,49 +1397,79 @@ function buildFigurine3D(){
   while(figGroup.children.length) figGroup.remove(figGroup.children[0]);
   if(!figurine) return;
 
-  const figBaseY=50; // figurine sits on top of box
+  const figBaseY=50;
+  const meshMap={};
 
-  figurine.pieces.forEach((p,i)=>{
+  // Sort: root pieces first, then children
+  const sorted=[...figurine.pieces].sort((a,b)=>{
+    if(a.parent==='root'&&b.parent!=='root') return -1;
+    if(a.parent!=='root'&&b.parent==='root') return 1;
+    return 0;
+  });
+
+  sorted.forEach((p,i)=>{
     const scale=p._scale||1;
+    const s=getShapeSize(p.shape);
     const geo=make3DShape(p.shape,scale);
-    const color=COLORS3D[i%COLORS3D.length];
-    const mat=new THREE.MeshPhongMaterial({
-      color,
-      shininess:40,
-      transparent:!p.movable,
-      opacity:p.movable?1:0.75
-    });
+    const ci=figurine.pieces.indexOf(p);
+    const color=COLORS3D[ci%COLORS3D.length];
+    const mat=new THREE.MeshPhongMaterial({color,shininess:40,transparent:true,opacity:p.movable?1:0.7});
+
+    // Offset geometry for pivot point (so rotation works from the right point)
+    const m=motions?motions.motions.find(mo=>mo.piece_id===p.id):null;
+    const pivot=m?m.pivot:'center';
+    const h2=s.h*scale/2, w2=s.w*scale/2;
+    if(pivot==='top') geo.translate(0,-h2,0);
+    else if(pivot==='bottom') geo.translate(0,h2,0);
+    else if(pivot==='left') geo.translate(w2,0,0);
+    else if(pivot==='right') geo.translate(-w2,0,0);
+    // center = no offset
+
     const mesh=new THREE.Mesh(geo,mat);
     mesh.castShadow=true;
 
-    // Position: scale from mm coords, Y is up in Three.js
-    const px=p.position.x*0.8;
-    const py=-p.position.y*0.8+figBaseY; // flip Y, offset up
-    const pz=-(p.layer||0)*3; // layer depth
+    // Position in world
+    let px=p.position.x*0.7;
+    let py=-p.position.y*0.7+figBaseY;
+    const pz=-(p.layer||0)*4;
+
+    // Adjust pivot position
+    if(pivot==='top') py+=h2*0.7;
+    else if(pivot==='bottom') py-=h2*0.7;
 
     mesh.position.set(px,py,pz);
     if(p.rotation) mesh.rotation.z=p.rotation*Math.PI/180;
 
-    // Store for animation
     mesh.userData={
       pieceId:p.id,
       origPos:new THREE.Vector3(px,py,pz),
       origRot:p.rotation?p.rotation*Math.PI/180:0,
-      isMovable:p.movable
+      isMovable:p.movable,
+      pivot
     };
+    meshMap[p.id]=mesh;
 
-    // Movable indicator — glow ring
+    // Movable glow
     if(p.movable){
-      const ring=new THREE.Mesh(
-        new THREE.RingGeometry(getShapeSize(p.shape).w*scale*0.45,getShapeSize(p.shape).w*scale*0.55,24),
-        new THREE.MeshBasicMaterial({color:0xff6b35,transparent:true,opacity:0.3,side:THREE.DoubleSide})
-      );
-      ring.position.copy(mesh.position);
-      ring.position.z+=1;
-      figGroup.add(ring);
+      const glowGeo=new THREE.SphereGeometry(Math.max(s.w,s.h)*scale*0.35,8,8);
+      const glow=new THREE.Mesh(glowGeo,new THREE.MeshBasicMaterial({color:0xff6b35,transparent:true,opacity:0.08,side:THREE.DoubleSide}));
+      glow.position.copy(mesh.position);
+      figGroup.add(glow);
     }
 
     figGroup.add(mesh);
+  });
+
+  // Draw connection lines between parent-child
+  sorted.forEach(p=>{
+    if(p.parent==='root') return;
+    const parentMesh=meshMap[p.parent];
+    const childMesh=meshMap[p.id];
+    if(parentMesh&&childMesh){
+      const lineGeo=new THREE.BufferGeometry().setFromPoints([parentMesh.position,childMesh.position]);
+      const line=new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:0x444466,transparent:true,opacity:0.3}));
+      figGroup.add(line);
+    }
   });
 }
 
@@ -1509,7 +1554,9 @@ function buildMechanism3D(){
     // T-bar
     const tGeo=new THREE.BoxGeometry(16,1.5,3);
     const t=new THREE.Mesh(tGeo,fMat);
-    t.position.set(0,shZ+maxR+fLen,zPos);
+    const tbarY=shZ+maxR+fLen;
+    t.position.set(0,tbarY,zPos);
+    t.userData={isTbar:true,camData:camD,baseY:tbarY};
     mechGroup.add(t);
 
     // Cam label (sprite)
