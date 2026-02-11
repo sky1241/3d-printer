@@ -1076,7 +1076,74 @@ function updateParam(){
 }
 
 function doGenerate(){
-  alert("🔩 Génération STL en cours...\n\nJSON formes: "+figurine.pieces.length+" pièces\nJSON mouvements: "+motions.cam_count+" cames\nDrive: "+(drive===0?"Manivelle":"Moteur")+"\n\n→ Prêt pour automata_unified_v4.py");
+  if(!figurine||!motions) return alert("Pas de figurine ou mouvements définis");
+  
+  // Build complete automata config for the Python engine
+  const config = {
+    version: "6.3",
+    figurine: {
+      name: figurine.name,
+      pieces: figurine.pieces.map(p=>({
+        id: p.id,
+        name: p.name,
+        shape: p.shape,
+        position: p.position,
+        rotation: p.rotation||0,
+        movable: p.movable||false,
+        parent: p.parent
+      }))
+    },
+    mechanism: {
+      drive: drive===0?"crank":"motor",
+      cam_count: motions.cam_count,
+      cams: Array.from({length:motions.cam_count},(_, ci)=>{
+        const pieces=motions.motions.filter(m=>m.cam_index===ci);
+        const maxAmp=pieces.length>0?Math.max(...pieces.map(m=>m.amplitude)):20;
+        const profile=pieces.length>0?pieces[0].cam_profile:'smooth';
+        const motion=pieces.length>0?pieces[0].motion:'OSCILLATE';
+        let lift_mm;
+        if(motion==='ROTATE') lift_mm=3;
+        else if(motion==='TRANSLATE_V'||motion==='TRANSLATE_H') lift_mm=maxAmp*0.4;
+        else lift_mm=15*Math.sin(maxAmp*Math.PI/180);
+        lift_mm=Math.max(2,Math.min(lift_mm,10));
+        return{
+          cam_index:ci,
+          profile,
+          lift_mm:Math.round(lift_mm*10)/10,
+          base_radius_mm:4,
+          shaft_bore_mm:5,
+          thickness_mm:4,
+          pieces:pieces.map(p=>p.piece_id)
+        };
+      }),
+      shaft:{diameter_mm:5,length_mm:50},
+      box:{width_mm:70,depth_mm:40,height_mm:30,wall_mm:2}
+    },
+    motions: motions.motions.map(m=>({
+      piece_id:m.piece_id,
+      motion:m.motion,
+      pivot:m.pivot,
+      amplitude:m.amplitude,
+      speed:m.speed,
+      phase:m.phase,
+      cam_profile:m.cam_profile,
+      cam_index:m.cam_index
+    })),
+    printer:{
+      model:"ender3",
+      material:"PLA",
+      nozzle_mm:0.4,
+      layer_mm:0.2
+    }
+  };
+
+  const json=JSON.stringify(config,null,2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=`automata_${figurine.name.replace(/\s/g,'_')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ═══════════════════════════════════════════
@@ -1311,7 +1378,7 @@ function startRenderer(){
 
     // Real cam radius function: base circle + profile displacement
     function realCamRadius(angle,camData,rotOffset){
-      const baseR=5; // 5mm base circle (small to make lobe visible!)
+      const baseR=camData.baseR||4;
       const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
       let displacement=0;
       if(camData.profile==='smooth'){
@@ -1331,12 +1398,13 @@ function startRenderer(){
 
     for(let ci=0;ci<Math.min(nCams,4);ci++){
       const ca=camAngle+ci*Math.PI*0.6;
-      const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.35/Math.max(Math.min(nCams,4)-1,1));
+      // Space cams evenly along shaft with more room
+      const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
       const camData=buildCamProfile(ci);
-      // Override lift to be visually clear — scale up significantly
-      const visLift=Math.max(6,camData.lift*1.8);
-      const visCamData={...camData,lift:visLift};
-      const baseR=5;
+      // Real proportions: baseR=4mm, lift=real calculated (clamped 2-6mm)
+      const realLift=Math.max(2,Math.min(camData.lift,6));
+      const visCamData={...camData,lift:realLift,baseR:4};
+      const baseR=4;
 
       const camFill=['#D4652A','#C85A22','#BC4F1C','#A84518'][ci];
       const camEdge=['#E87840','#D96C35','#CC602B','#BB5520'][ci];
@@ -1436,9 +1504,10 @@ function startRenderer(){
     if(motions&&motions.motions.length>0){
       const usedCams=new Set(motions.motions.map(m=>m.cam_index||0));
       usedCams.forEach(ci=>{
-        const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.35/Math.max(Math.min(nCams,4)-1,1));
+        const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
         const camData=buildCamProfile(ci);
-        const[ftx,fty]=mproj(xOff,0,shZ+8+camData.lift+12);
+        const realLift=Math.max(2,Math.min(camData.lift,6));
+        const[ftx,fty]=mproj(xOff,0,shZ+4+realLift+12);
         ctx.strokeStyle='rgba(196,164,74,.12)';ctx.lineWidth=0.6;ctx.setLineDash([2,5]);
         ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-10);ctx.stroke();ctx.setLineDash([]);
       });
