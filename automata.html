@@ -1407,6 +1407,37 @@ function doGenerate(){
     allTris.push([[crankLen,crankY+2,shaftZ],[x1,crankY+2,z1],[x2,crankY+2,z2]]);
   }
 
+  // ── Gears (when ratio > 1:1) ──
+  if(gearRatio>1){
+    const smallR=5,bigR=smallR*gearRatio;
+    const gearThick=3,gSegs=72;
+    const smallTeeth=8,bigTeeth=smallTeeth*gearRatio;
+    const gearY1=crankY-gearThick-1; // small gear position
+    const gearY2=gearY1-gearThick-1; // big gear position
+
+    const mkGearTris=(r,teeth,yStart)=>{
+      const pts=[];
+      for(let i=0;i<teeth*2;i++){
+        const a=(i/(teeth*2))*Math.PI*2;
+        const rr=i%2===0?r:r-1.5;
+        pts.push([rr*Math.cos(a),rr*Math.sin(a)]);
+      }
+      const y1=yStart,y2=yStart+gearThick;
+      // Front and back faces (fan triangulation)
+      for(let i=0;i<pts.length;i++){
+        const j=(i+1)%pts.length;
+        allTris.push([[0,y1,shaftZ],[pts[j][0],y1,pts[j][1]+shaftZ],[pts[i][0],y1,pts[i][1]+shaftZ]]);
+        allTris.push([[0,y2,shaftZ],[pts[i][0],y2,pts[i][1]+shaftZ],[pts[j][0],y2,pts[j][1]+shaftZ]]);
+        // Side walls
+        allTris.push([[pts[i][0],y1,pts[i][1]+shaftZ],[pts[j][0],y1,pts[j][1]+shaftZ],[pts[j][0],y2,pts[j][1]+shaftZ]]);
+        allTris.push([[pts[i][0],y1,pts[i][1]+shaftZ],[pts[j][0],y2,pts[j][1]+shaftZ],[pts[i][0],y2,pts[i][1]+shaftZ]]);
+      }
+    };
+
+    mkGearTris(smallR,smallTeeth,gearY1);
+    mkGearTris(bigR,bigTeeth,gearY2);
+  }
+
   // ── Figurine pieces (extruded 2D shapes) ──
   const figBaseZ=plateZ+plateH;
   figurine.pieces.forEach((p,idx)=>{
