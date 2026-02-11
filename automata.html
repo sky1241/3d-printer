@@ -366,60 +366,220 @@ function setDrive(d){
 /* ═══════════════════════════════════════════
    AI CALLS
    ═══════════════════════════════════════════ */
-async function callAI(systemPrompt, userMsg){
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:"claude-sonnet-4-20250514",
-      max_tokens:2000,
-      system:systemPrompt,
-      messages:[{role:"user",content:userMsg}]
-    })
-  });
-  const data = await resp.json();
-  const text = data.content.map(b=>b.text||'').join('');
-  // Extract JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if(!jsonMatch) throw new Error("No JSON in response");
-  return JSON.parse(jsonMatch[0]);
+/* ═══ SMART LOCAL DECOMPOSER ═══ */
+const TEMPLATES = {
+  // ── ANIMALS ──
+  chien:{name:"Chien",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:30,ry:18},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:14},position:{x:-35,y:-8},rotation:0,parent:"corps",anchor:"left",layer:1,movable:false},
+    {id:"museau",name:"Museau",shape:{type:"ellipse",rx:8,ry:5},position:{x:-50,y:-5},rotation:0,parent:"tete",anchor:"left",layer:2,movable:false},
+    {id:"oreille_g",name:"Oreille G",shape:{type:"tri",base:10,h:14},position:{x:-38,y:-22},rotation:0,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"oreille_d",name:"Oreille D",shape:{type:"tri",base:10,h:14},position:{x:-28,y:-22},rotation:0,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"patte_av_g",name:"Patte avant G",shape:{type:"rect",w:6,h:22},position:{x:-18,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_av_d",name:"Patte avant D",shape:{type:"rect",w:6,h:22},position:{x:-8,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"patte_ar_g",name:"Patte arrière G",shape:{type:"rect",w:6,h:22},position:{x:18,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_ar_d",name:"Patte arrière D",shape:{type:"rect",w:6,h:22},position:{x:10,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"queue",name:"Queue",shape:{type:"tri",base:8,h:24},position:{x:34,y:-6},rotation:120,parent:"corps",anchor:"right",layer:1,movable:true}
+  ]},
+  chat:{name:"Chat",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:24,ry:16},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:15},position:{x:-28,y:-10},rotation:0,parent:"corps",anchor:"left",layer:1,movable:false},
+    {id:"oreille_g",name:"Oreille G",shape:{type:"tri",base:8,h:12},position:{x:-34,y:-26},rotation:-10,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"oreille_d",name:"Oreille D",shape:{type:"tri",base:8,h:12},position:{x:-22,y:-26},rotation:10,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"patte_av_g",name:"Patte avant G",shape:{type:"rect",w:5,h:18},position:{x:-14,y:16},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:false},
+    {id:"patte_av_d",name:"Patte avant D",shape:{type:"rect",w:5,h:18},position:{x:-6,y:16},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:false},
+    {id:"patte_ar_g",name:"Patte arrière G",shape:{type:"rect",w:5,h:18},position:{x:14,y:16},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:false},
+    {id:"patte_ar_d",name:"Patte arrière D",shape:{type:"rect",w:5,h:18},position:{x:8,y:16},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:false},
+    {id:"patte_wave",name:"Patte qui wave",shape:{type:"rect",w:5,h:18},position:{x:-18,y:8},rotation:-30,parent:"corps",anchor:"left",layer:2,movable:true},
+    {id:"queue",name:"Queue",shape:{type:"ellipse",rx:4,ry:20},position:{x:28,y:-12},rotation:30,parent:"corps",anchor:"right",layer:1,movable:true}
+  ]},
+  oiseau:{name:"Oiseau",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:22,ry:14},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:10},position:{x:-26,y:-12},rotation:0,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"bec",name:"Bec",shape:{type:"tri",base:8,h:14},position:{x:-40,y:-12},rotation:-90,parent:"tete",anchor:"left",layer:2,movable:false},
+    {id:"oeil",name:"Œil",shape:{type:"circle",r:2},position:{x:-28,y:-14},rotation:0,parent:"tete",anchor:"center",layer:3,movable:false},
+    {id:"aile_g",name:"Aile gauche",shape:{type:"tri",base:30,h:18},position:{x:0,y:-18},rotation:0,parent:"corps",anchor:"top",layer:1,movable:true},
+    {id:"aile_d",name:"Aile droite",shape:{type:"tri",base:30,h:18},position:{x:0,y:-18},rotation:180,parent:"corps",anchor:"top",layer:-1,movable:true},
+    {id:"queue",name:"Queue",shape:{type:"tri",base:16,h:12},position:{x:24,y:-4},rotation:150,parent:"corps",anchor:"right",layer:1,movable:false},
+    {id:"patte_g",name:"Patte G",shape:{type:"rect",w:3,h:14},position:{x:-6,y:14},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:false},
+    {id:"patte_d",name:"Patte D",shape:{type:"rect",w:3,h:14},position:{x:6,y:14},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:false}
+  ]},
+  canard:{name:"Canard",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:26,ry:18},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:true},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:12},position:{x:-28,y:-14},rotation:0,parent:"corps",anchor:"left",layer:1,movable:false},
+    {id:"bec",name:"Bec",shape:{type:"rect",w:16,h:5},position:{x:-44,y:-12},rotation:0,parent:"tete",anchor:"left",layer:2,movable:false},
+    {id:"aile",name:"Aile",shape:{type:"ellipse",rx:16,ry:10},position:{x:4,y:-6},rotation:-10,parent:"corps",anchor:"top",layer:1,movable:false},
+    {id:"queue",name:"Queue",shape:{type:"tri",base:12,h:10},position:{x:28,y:-8},rotation:140,parent:"corps",anchor:"right",layer:1,movable:false}
+  ]},
+  poisson:{name:"Poisson",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:30,ry:14},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"queue",name:"Queue",shape:{type:"tri",base:22,h:16},position:{x:32,y:0},rotation:90,parent:"corps",anchor:"right",layer:1,movable:true},
+    {id:"nageoire_d",name:"Nageoire dorsale",shape:{type:"tri",base:18,h:12},position:{x:-4,y:-16},rotation:0,parent:"corps",anchor:"top",layer:1,movable:false},
+    {id:"nageoire_v",name:"Nageoire ventrale",shape:{type:"tri",base:10,h:8},position:{x:4,y:14},rotation:180,parent:"corps",anchor:"bottom",layer:1,movable:false},
+    {id:"oeil",name:"Œil",shape:{type:"circle",r:3},position:{x:-18,y:-3},rotation:0,parent:"corps",anchor:"left",layer:2,movable:false}
+  ]},
+  dinosaure:{name:"Dinosaure",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:28,ry:20},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"ellipse",rx:14,ry:10},position:{x:-34,y:-12},rotation:-15,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"machoire",name:"Mâchoire",shape:{type:"tri",base:12,h:8},position:{x:-46,y:-8},rotation:-90,parent:"tete",anchor:"left",layer:2,movable:true},
+    {id:"patte_av_g",name:"Bras G",shape:{type:"rect",w:5,h:14},position:{x:-16,y:10},rotation:20,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_av_d",name:"Bras D",shape:{type:"rect",w:5,h:14},position:{x:-10,y:10},rotation:20,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"patte_ar_g",name:"Patte G",shape:{type:"rect",w:8,h:24},position:{x:14,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:false},
+    {id:"patte_ar_d",name:"Patte D",shape:{type:"rect",w:8,h:24},position:{x:22,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:false},
+    {id:"queue",name:"Queue",shape:{type:"tri",base:10,h:35},position:{x:32,y:4},rotation:100,parent:"corps",anchor:"right",layer:1,movable:true},
+    {id:"crete1",name:"Crête 1",shape:{type:"tri",base:8,h:10},position:{x:-10,y:-22},rotation:0,parent:"corps",anchor:"top",layer:2,movable:false},
+    {id:"crete2",name:"Crête 2",shape:{type:"tri",base:8,h:10},position:{x:0,y:-22},rotation:0,parent:"corps",anchor:"top",layer:2,movable:false},
+    {id:"crete3",name:"Crête 3",shape:{type:"tri",base:8,h:10},position:{x:10,y:-22},rotation:0,parent:"corps",anchor:"top",layer:2,movable:false}
+  ]},
+  robot:{name:"Robot",pieces:[
+    {id:"corps",name:"Torse",shape:{type:"rect",w:30,h:36},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"square",s:22},position:{x:0,y:-30},rotation:0,parent:"corps",anchor:"top",layer:1,movable:true},
+    {id:"antenne",name:"Antenne",shape:{type:"rect",w:3,h:12},position:{x:0,y:-44},rotation:0,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"oeil_g",name:"Œil G",shape:{type:"circle",r:4},position:{x:-6,y:-32},rotation:0,parent:"tete",anchor:"center",layer:2,movable:false},
+    {id:"oeil_d",name:"Œil D",shape:{type:"circle",r:4},position:{x:6,y:-32},rotation:0,parent:"tete",anchor:"center",layer:2,movable:false},
+    {id:"bras_g",name:"Bras G",shape:{type:"rect",w:6,h:28},position:{x:-22,y:2},rotation:0,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"bras_d",name:"Bras D",shape:{type:"rect",w:6,h:28},position:{x:22,y:2},rotation:0,parent:"corps",anchor:"right",layer:1,movable:true},
+    {id:"patte_g",name:"Jambe G",shape:{type:"rect",w:8,h:26},position:{x:-10,y:32},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_d",name:"Jambe D",shape:{type:"rect",w:8,h:26},position:{x:10,y:32},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true}
+  ]},
+  cheval:{name:"Cheval",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:34,ry:18},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"ellipse",rx:12,ry:8},position:{x:-42,y:-16},rotation:-30,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"cou",name:"Cou",shape:{type:"rect",w:8,h:20},position:{x:-34,y:-8},rotation:-20,parent:"corps",anchor:"left",layer:0,movable:false},
+    {id:"oreille_g",name:"Oreille G",shape:{type:"tri",base:5,h:10},position:{x:-44,y:-28},rotation:-10,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"oreille_d",name:"Oreille D",shape:{type:"tri",base:5,h:10},position:{x:-38,y:-28},rotation:10,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"patte_av_g",name:"Patte AV-G",shape:{type:"rect",w:5,h:28},position:{x:-20,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_av_d",name:"Patte AV-D",shape:{type:"rect",w:5,h:28},position:{x:-12,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"patte_ar_g",name:"Patte AR-G",shape:{type:"rect",w:5,h:28},position:{x:18,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"patte_ar_d",name:"Patte AR-D",shape:{type:"rect",w:5,h:28},position:{x:26,y:20},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true},
+    {id:"queue",name:"Queue",shape:{type:"ellipse",rx:4,ry:18},position:{x:36,y:-8},rotation:20,parent:"corps",anchor:"right",layer:1,movable:true},
+    {id:"criniere",name:"Crinière",shape:{type:"ellipse",rx:4,ry:14},position:{x:-32,y:-14},rotation:-20,parent:"cou",anchor:"top",layer:2,movable:false}
+  ]},
+  bonhomme:{name:"Bonhomme",pieces:[
+    {id:"corps",name:"Torse",shape:{type:"rect",w:24,h:32},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:14},position:{x:0,y:-28},rotation:0,parent:"corps",anchor:"top",layer:1,movable:true},
+    {id:"bras_g",name:"Bras G",shape:{type:"rect",w:5,h:26},position:{x:-18,y:0},rotation:0,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"bras_d",name:"Bras D",shape:{type:"rect",w:5,h:26},position:{x:18,y:0},rotation:0,parent:"corps",anchor:"right",layer:1,movable:true},
+    {id:"jambe_g",name:"Jambe G",shape:{type:"rect",w:7,h:28},position:{x:-8,y:30},rotation:0,parent:"corps",anchor:"bottom",layer:1,movable:true},
+    {id:"jambe_d",name:"Jambe D",shape:{type:"rect",w:7,h:28},position:{x:8,y:30},rotation:0,parent:"corps",anchor:"bottom",layer:-1,movable:true}
+  ]},
+  papillon:{name:"Papillon",pieces:[
+    {id:"corps",name:"Corps",shape:{type:"ellipse",rx:4,ry:16},position:{x:0,y:0},rotation:0,parent:"root",anchor:"center",layer:0,movable:false},
+    {id:"tete",name:"Tête",shape:{type:"circle",r:6},position:{x:0,y:-20},rotation:0,parent:"corps",anchor:"top",layer:1,movable:false},
+    {id:"antenne_g",name:"Antenne G",shape:{type:"rect",w:2,h:12},position:{x:-6,y:-30},rotation:-20,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"antenne_d",name:"Antenne D",shape:{type:"rect",w:2,h:12},position:{x:6,y:-30},rotation:20,parent:"tete",anchor:"top",layer:2,movable:false},
+    {id:"aile_hg",name:"Aile haute G",shape:{type:"ellipse",rx:22,ry:16},position:{x:-22,y:-8},rotation:-10,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"aile_hd",name:"Aile haute D",shape:{type:"ellipse",rx:22,ry:16},position:{x:22,y:-8},rotation:10,parent:"corps",anchor:"right",layer:-1,movable:true},
+    {id:"aile_bg",name:"Aile basse G",shape:{type:"ellipse",rx:16,ry:12},position:{x:-18,y:8},rotation:-20,parent:"corps",anchor:"left",layer:1,movable:true},
+    {id:"aile_bd",name:"Aile basse D",shape:{type:"ellipse",rx:16,ry:12},position:{x:18,y:8},rotation:20,parent:"corps",anchor:"right",layer:-1,movable:true}
+  ]}
+};
+
+// Movement templates
+const MOTION_TEMPLATES = {
+  marche:{desc:"Marche alternée",cams:2,fn:(pieces)=>{
+    const motions=[];const pattes=pieces.filter(p=>p.movable&&(p.id.includes('patte')||p.id.includes('jambe')));
+    const av=pattes.filter(p=>p.id.includes('av')||p.id.includes('_g')&&!p.id.includes('ar'));
+    pattes.forEach((p,i)=>{motions.push({piece_id:p.id,motion:"OSCILLATE",pivot:"top",amplitude:25,speed:"medium",phase:i%2===0?0:180,cam_profile:"smooth",cam_index:i%2});});
+    return{motions,cam_count:2};
+  }},
+  queue:{desc:"Queue remuante",cams:1,fn:(pieces)=>{
+    const q=pieces.find(p=>p.id==='queue');
+    if(!q)return{motions:[],cam_count:0};
+    return{motions:[{piece_id:"queue",motion:"OSCILLATE",pivot:"left",amplitude:40,speed:"medium",phase:0,cam_profile:"smooth",cam_index:0}],cam_count:1};
+  }},
+  ailes:{desc:"Battement d'ailes",cams:1,fn:(pieces)=>{
+    const ailes=pieces.filter(p=>p.id.includes('aile'));
+    return{motions:ailes.map((a,i)=>({piece_id:a.id,motion:"OSCILLATE",pivot:"bottom",amplitude:35,speed:"medium",phase:i%2===0?0:180,cam_profile:"smooth",cam_index:0})),cam_count:1};
+  }},
+  tete:{desc:"Hochement de tête",cams:1,fn:(pieces)=>{
+    const t=pieces.find(p=>p.id==='tete');
+    if(!t)return{motions:[],cam_count:0};
+    return{motions:[{piece_id:"tete",motion:"OSCILLATE",pivot:"bottom",amplitude:20,speed:"fast",phase:0,cam_profile:"sharp",cam_index:0}],cam_count:1};
+  }},
+  wave:{desc:"Bras/patte qui wave",cams:1,fn:(pieces)=>{
+    const arm=pieces.find(p=>p.id.includes('bras_d')||p.id.includes('patte_wave'));
+    if(!arm)return{motions:[],cam_count:0};
+    return{motions:[{piece_id:arm.id,motion:"OSCILLATE",pivot:"top",amplitude:45,speed:"medium",phase:0,cam_profile:"smooth",cam_index:0}],cam_count:1};
+  }},
+  nage:{desc:"Nage — queue ondule",cams:1,fn:(pieces)=>{
+    const q=pieces.find(p=>p.id==='queue');
+    if(!q)return{motions:[],cam_count:0};
+    return{motions:[{piece_id:"queue",motion:"OSCILLATE",pivot:"left",amplitude:30,speed:"fast",phase:0,cam_profile:"smooth",cam_index:0}],cam_count:1};
+  }},
+  bob:{desc:"Corps qui plonge",cams:1,fn:(pieces)=>{
+    const c=pieces.find(p=>p.id==='corps');
+    if(!c)return{motions:[],cam_count:0};
+    return{motions:[{piece_id:"corps",motion:"TRANSLATE_V",pivot:"center",amplitude:15,speed:"medium",phase:0,cam_profile:"smooth",cam_index:0}],cam_count:1};
+  }}
+};
+
+function matchTemplate(input){
+  const t=input.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  // Match animal/object
+  const formKeys={chien:['chien','dog','toutou','chiot'],chat:['chat','cat','chaton','minou','kitty'],oiseau:['oiseau','bird','piaf'],canard:['canard','duck'],poisson:['poisson','fish'],dinosaure:['dinosaure','dino','trex','t-rex','rex'],robot:['robot','mecha','androide'],cheval:['cheval','horse','poney','pony'],bonhomme:['bonhomme','personnage','humain','homme','femme','personne','figure','man','person'],papillon:['papillon','butterfly']};
+  let formKey=null;
+  for(const[k,words]of Object.entries(formKeys)){if(words.some(w=>t.includes(w))){formKey=k;break;}}
+  return formKey;
 }
 
-const PROMPT_FORM = `Tu es un décomposeur de formes pour un générateur d'automates mécaniques imprimables en 3D.
+function matchMotions(input, pieces){
+  const t=input.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const allMotions=[];let totalCams=0;
+  const motionKeys={marche:['marche','walk','avance','court','run'],queue:['queue','tail','remue'],ailes:['aile','bat','fly','vole','envol'],tete:['tete','head','hoche','nod','picore','peck'],wave:['wave','salue','bras','patte','main','hand'],nage:['nage','swim','ondule'],bob:['plonge','bob','monte','descend','bounce','saute','jump']};
 
-L'utilisateur décrit un objet, animal ou personnage. Tu le décomposes en formes primitives.
+  for(const[k,words]of Object.entries(motionKeys)){
+    if(words.some(w=>t.includes(w))){
+      const tmpl=MOTION_TEMPLATES[k];
+      if(tmpl){
+        const result=tmpl.fn(pieces);
+        result.motions.forEach(m=>{
+          m.cam_index=m.cam_index+totalCams;
+          if(!allMotions.find(em=>em.piece_id===m.piece_id)) allMotions.push(m);
+        });
+        totalCams+=result.cam_count;
+      }
+    }
+  }
 
-TES 6 FORMES (rien d'autre) :
-- CERCLE: {"type":"circle","r":<mm>}
-- RECTANGLE: {"type":"rect","w":<mm>,"h":<mm>}
-- TRIANGLE: {"type":"tri","base":<mm>,"h":<mm>}
-- CARRE: {"type":"square","s":<mm>}
-- ELLIPSE: {"type":"ellipse","rx":<mm>,"ry":<mm>}
-- LOSANGE: {"type":"diamond","w":<mm>,"h":<mm>}
+  // If no motion matched, try smart default based on movable pieces
+  if(allMotions.length===0){
+    const movables=pieces.filter(p=>p.movable);
+    movables.forEach((p,i)=>{
+      const isLeg=p.id.includes('patte')||p.id.includes('jambe');
+      const isArm=p.id.includes('bras');
+      const isWing=p.id.includes('aile');
+      const isTail=p.id.includes('queue');
+      const isHead=p.id==='tete';
+      allMotions.push({
+        piece_id:p.id,
+        motion:isWing?"OSCILLATE":isLeg?"OSCILLATE":isArm?"OSCILLATE":isTail?"OSCILLATE":isHead?"OSCILLATE":"TRANSLATE_V",
+        pivot:isLeg?"top":isArm?"top":isWing?"bottom":isTail?"left":"center",
+        amplitude:isWing?35:isLeg?25:isTail?40:isHead?20:15,
+        speed:"medium",
+        phase:i%2===0?0:180,
+        cam_profile:"smooth",
+        cam_index:Math.min(i,3)
+      });
+    });
+    totalCams=Math.min(movables.length,4);
+  }
 
-Contraintes: taille min 8mm, max 150mm, assemblage max 256×256×256mm.
+  // Cap at 4 cams
+  allMotions.forEach(m=>{m.cam_index=Math.min(m.cam_index,3);});
+  totalCams=Math.min(totalCams,4);
 
-Pour chaque pièce: id, name, shape (une des 6), position {x,y} en mm, rotation (degrés), parent (id ou "root"), anchor ("top"/"bottom"/"left"/"right"/"center"), layer (int), movable (bool).
+  // Build groups
+  const groups=[];
+  for(let ci=0;ci<=3;ci++){
+    const gp=allMotions.filter(m=>m.cam_index===ci);
+    if(gp.length>0) groups.push({cam_index:ci,pieces:gp.map(m=>m.piece_id),note:gp.map(m=>m.piece_id).join('+')});
+  }
 
-Minimum 3 pièces, maximum 15. Au moins 1 movable:true. Proportions réalistes.
+  return{description:t,cam_count:totalCams||1,drive:"crank",motions:allMotions,groups};
+}
 
-Réponds UNIQUEMENT en JSON: {"name":"...","pieces":[...]}. Aucune explication.`;
-
-const PROMPT_MOTION = `Tu es un ingénieur mécanique pour un générateur d'automates à cames imprimables en 3D.
-
-Tu reçois un assemblage de pièces + une description du mouvement.
-
-TES 4 MOUVEMENTS (rien d'autre) :
-- TRANSLATE_V: monte/descend
-- TRANSLATE_H: gauche/droite
-- OSCILLATE: bascule autour d'un pivot
-- ROTATE: rotation continue
-
-Pour chaque pièce mobile: piece_id, motion (un des 4), pivot ("top"/"bottom"/"left"/"right"/"center"), amplitude (mm ou degrés), speed ("slow"/"medium"/"fast"), phase (0/90/180/270), cam_profile ("smooth"/"sharp"/"dwell"), cam_index (0-3).
-
-Max 4 cam_index. Pièces symétriques = même cam, phase opposée.
-
-Réponds UNIQUEMENT en JSON: {"description":"...","cam_count":<n>,"drive":"crank"/"motor","motions":[...],"groups":[{"cam_index":<n>,"pieces":[...],"note":"..."}]}. Aucune explication.`;
+/* Prompts IA gardés dans PROMPTS_IA.md sur GitHub pour l'intégration backend future */
 
 /* ═══════════════════════════════════════════
    STEP 1: DECOMPOSE
@@ -429,8 +589,18 @@ async function doDecompose(){
   if(!input) return;
   const btn = document.getElementById('btnDecompose');
   btn.disabled=true; btn.textContent='🧠 Décomposition...';
+
+  // Simulate brief AI thinking
+  await new Promise(r=>setTimeout(r,400));
+
   try{
-    figurine = await callAI(PROMPT_FORM, input);
+    const key = matchTemplate(input);
+    if(!key){
+      alert("Je ne reconnais pas encore ça ! Essaie : chien, chat, oiseau, canard, poisson, dinosaure, robot, cheval, bonhomme, papillon");
+      btn.disabled=false; btn.textContent='🧠 Décomposer en formes';
+      return;
+    }
+    figurine = JSON.parse(JSON.stringify(TEMPLATES[key])); // deep clone
     motions = null;
     selectedPiece = null;
     goToStep(2);
@@ -440,9 +610,11 @@ async function doDecompose(){
     document.getElementById('badgeFDM').style.display='';
     document.getElementById('piecesHeader').style.display='';
     document.getElementById('statPieces').textContent=figurine.pieces.length+'p';
+    document.getElementById('badgePieces').textContent=figurine.pieces.length+'p · '+figurine.name;
+    document.getElementById('badgePieces').style.display='';
   }catch(e){
     console.error(e);
-    alert("Erreur IA: "+e.message);
+    alert("Erreur: "+e.message);
   }
   btn.disabled=false; btn.textContent='🧠 Décomposer en formes';
 }
@@ -455,17 +627,19 @@ async function doMotion(){
   if(!input || !figurine) return;
   const btn = document.getElementById('btnMotion');
   btn.disabled=true; btn.textContent='⚙️ Analyse...';
+
+  // Simulate brief thinking
+  await new Promise(r=>setTimeout(r,400));
+
   try{
-    const context = `Assemblage: ${JSON.stringify(figurine)}\n\nMouvement souhaité: ${input}`;
-    motions = await callAI(PROMPT_MOTION, context);
+    motions = matchMotions(input, figurine.pieces);
     goToStep(3);
     document.getElementById('statCams').textContent=motions.cam_count;
     document.getElementById('btnGenerate').disabled=false;
-    if(motions.drive==='motor') setDrive(1);
     renderPiecesList();
   }catch(e){
     console.error(e);
-    alert("Erreur IA: "+e.message);
+    alert("Erreur: "+e.message);
   }
   btn.disabled=false; btn.textContent='⚙️ Assigner les mouvements';
 }
