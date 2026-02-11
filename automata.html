@@ -1411,7 +1411,12 @@ function animate(){
       const rot=camRotOffset+camT;
       const angle=((rot+Math.PI*1.5)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
       const profMap={smooth:'smooth',sharp:'sharp',dwell:'dwell'};
-      const camD={base_radius_mm:8,lift_mm:10,profile:profMap[m.cam_profile]||'smooth'};
+      // Dynamic lift matching buildMechanism3D
+      const amp=Math.max(m.amplitude||30,20);
+      let lft;
+      if(m.motion==='ROTATE') lft=5;else if(m.motion==='TRANSLATE_V'||m.motion==='TRANSLATE_H') lft=amp*0.5;else lft=15*Math.sin(amp*Math.PI/180);
+      lft=Math.max(4,Math.min(lft,12));
+      const camD={base_radius_mm:8,lift_mm:lft,profile:profMap[m.cam_profile]||'smooth'};
       const r=realCamRadiusSTL(angle,camD);
       const wave=(r-camD.base_radius_mm)/camD.lift_mm*2-1; // normalize to -1→+1
 
