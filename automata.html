@@ -1286,35 +1286,76 @@ function startRenderer(){
       ctx.beginPath();ctx.arc(bx,by,2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
     });
 
-    // ── CAMS — solid 3D discs ──
+    // ── CAMS — REAL profiles from motion data ──
     const nCams=motions?motions.cam_count:1;
+    
+    // Pre-compute real cam profiles from motion assignments
+    function buildCamProfile(camIdx){
+      if(!motions) return {lift:4,profile:'smooth',pieces:[]};
+      const pieces=motions.motions.filter(m=>m.cam_index===camIdx);
+      if(pieces.length===0) return {lift:4,profile:'smooth',pieces:[]};
+      // Take max amplitude among pieces on this cam
+      const maxAmp=Math.max(...pieces.map(m=>m.amplitude));
+      const profile=pieces[0].cam_profile||'smooth';
+      const motion=pieces[0].motion||'OSCILLATE';
+      // Convert amplitude to real mm lift
+      // OSCILLATE: degrees → mm via ~15mm lever arm: lift = 15*sin(amp°)
+      // TRANSLATE: direct mm, scaled
+      let lift;
+      if(motion==='ROTATE') lift=3; // eccentric for rotation
+      else if(motion==='TRANSLATE_V'||motion==='TRANSLATE_H') lift=maxAmp*0.4;
+      else lift=15*Math.sin(maxAmp*Math.PI/180); // OSCILLATE
+      lift=Math.max(2,Math.min(lift,10)); // clamp 2-10mm
+      return {lift,profile,motion,pieces,amplitude:maxAmp};
+    }
+
+    // Real cam radius function: base circle + profile displacement
+    function realCamRadius(angle,camData,rotOffset){
+      const baseR=8; // 8mm base circle (shaft 5mm + 3mm wall)
+      const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2); // normalize 0..2π
+      let displacement=0;
+      if(camData.profile==='smooth'){
+        // Harmonic/sinusoidal: rise 0→π, fall π→2π
+        displacement=camData.lift*(1-Math.cos(theta))/2;
+      } else if(camData.profile==='sharp'){
+        // Triangular: linear rise 0→π/2, linear fall π/2→π, dwell 0 π→2π
+        if(theta<Math.PI/2) displacement=camData.lift*(theta/(Math.PI/2));
+        else if(theta<Math.PI) displacement=camData.lift*(1-(theta-Math.PI/2)/(Math.PI/2));
+        else displacement=0;
+      } else if(camData.profile==='dwell'){
+        // Rise 0→π/3, dwell π/3→π, fall π→4π/3, dwell 4π/3→2π
+        if(theta<Math.PI/3) displacement=camData.lift*(theta/(Math.PI/3));
+        else if(theta<Math.PI) displacement=camData.lift;
+        else if(theta<Math.PI*4/3) displacement=camData.lift*(1-(theta-Math.PI)/(Math.PI/3));
+        else displacement=0;
+      }
+      return baseR+displacement;
+    }
+
     for(let ci=0;ci<Math.min(nCams,4);ci++){
-      const ca=camAngle+ci*Math.PI*0.6;
+      const ca=camAngle+ci*Math.PI*0.6; // rotation offset per cam
       const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.35/Math.max(Math.min(nCams,4)-1,1));
-      const baseR=12;
-      // Cam colors — solid orange PLA shades
+      const camData=buildCamProfile(ci);
+      const baseR=8;
+
       const camFill=['#D4652A','#C85A22','#BC4F1C','#A84518'][ci];
       const camEdge=['#E87840','#D96C35','#CC602B','#BB5520'][ci];
       const camDark=['#A04A1A','#944016','#883812','#7C3010'][ci];
 
       const[gcx,gcy]=mproj(xOff,0,shZ);
-      const discRx=baseR*msc;
-      const discRy=baseR*msc*0.45;
       const camThick=3*msc;
 
-      function camRadius(angle){return baseR+5*Math.sin(angle*2+ca)+2*Math.sin(angle*3+ca*1.2);}
-
-      // Bottom edge (dark, visible below top face)
+      // Bottom edge
       ctx.fillStyle=camDark;ctx.strokeStyle=camDark;ctx.lineWidth=1;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=camRadius(t);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,camData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
-      // Side rim — connects top to bottom
+      // Side rim
       for(let i=0;i<=72;i++){
         const t=(i/72)*Math.PI*2;
         if(Math.sin(t)>-0.2){
-          const r=camRadius(t);
+          const r=realCamRadius(t,camData,ca);
           const px=gcx+r*Math.cos(t)*msc;
           const pyTop=gcy+r*Math.sin(t)*msc*0.45;
           const pyBot=pyTop+camThick;
@@ -1323,27 +1364,25 @@ function startRenderer(){
         }
       }
 
-      // Top face — SOLID cam profile
+      // Top face
       ctx.fillStyle=camFill;ctx.strokeStyle=camEdge;ctx.lineWidth=1.5;
       ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=camRadius(t);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,camData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.45;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
       ctx.closePath();ctx.fill();ctx.stroke();
 
-      // Center bore — dark hole
+      // Center bore
       ctx.fillStyle='#222';ctx.strokeStyle='#444';ctx.lineWidth=0.8;
       ctx.beginPath();ctx.ellipse(gcx,gcy,2.5*msc,2.5*msc*0.45,0,0,Math.PI*2);ctx.fill();ctx.stroke();
 
-      // ── Follower — solid brass rod ──
-      const topAngle=Math.PI*1.5;
-      const contactR=camRadius(topAngle);
+      // ── Follower — driven by REAL cam ──
+      const topAngle=Math.PI*1.5; // follower sits on top
+      const contactR=realCamRadius(topAngle,camData,ca);
       const lift=contactR-baseR;
 
       const[f1x,f1y]=mproj(xOff,0,shZ+contactR);
-      const[f2x,f2y]=mproj(xOff,0,shZ+baseR+8+lift);
-      // Shadow
+      const[f2x,f2y]=mproj(xOff,0,shZ+baseR+camData.lift+10+lift);
       ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=4;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(f1x+1,f1y+1);ctx.lineTo(f2x+1,f2y+1);ctx.stroke();
-      // Rod
       ctx.strokeStyle='#C4A44A';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
       ctx.strokeStyle='#D4B85A';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
       ctx.lineCap='butt';
@@ -1355,14 +1394,17 @@ function startRenderer(){
 
       // T-bar
       const platW=5;
-      const[pt1x,pt1y]=mproj(xOff-platW,0,shZ+baseR+8+lift);
-      const[pt2x,pt2y]=mproj(xOff+platW,0,shZ+baseR+8+lift);
+      const[pt1x,pt1y]=mproj(xOff-platW,0,shZ+baseR+camData.lift+10+lift);
+      const[pt2x,pt2y]=mproj(xOff+platW,0,shZ+baseR+camData.lift+10+lift);
       ctx.strokeStyle='#C4A44A';ctx.lineWidth=2;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(pt1x,pt1y);ctx.lineTo(pt2x,pt2y);ctx.stroke();ctx.lineCap='butt';
 
-      // Label
+      // Label — show real data
+      const profileLabel=camData.profile==='smooth'?'Harm.':camData.profile==='sharp'?'Tri.':'Dwell';
+      const ampLabel=camData.amplitude?Math.round(camData.amplitude)+'°':'';
       ctx.fillStyle='rgba(255,180,80,.5)';ctx.font='600 6px DM Sans';ctx.textAlign='center';
-      ctx.fillText('CAM '+(ci+1),gcx,gcy+discRy+camThick+9);
+      const maxR=baseR+camData.lift;
+      ctx.fillText(`CAM ${ci+1} · ${profileLabel} ${ampLabel}`,gcx,gcy+maxR*msc*0.45+camThick+9);
     }
 
     // ── Drive — solid ──
@@ -1395,7 +1437,8 @@ function startRenderer(){
       const usedCams=new Set(motions.motions.map(m=>m.cam_index||0));
       usedCams.forEach(ci=>{
         const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.35/Math.max(Math.min(nCams,4)-1,1));
-        const[ftx,fty]=mproj(xOff,0,shZ+25);
+        const camData=buildCamProfile(ci);
+        const[ftx,fty]=mproj(xOff,0,shZ+8+camData.lift+12);
         ctx.strokeStyle='rgba(196,164,74,.12)';ctx.lineWidth=0.6;ctx.setLineDash([2,5]);
         ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-10);ctx.stroke();ctx.setLineDash([]);
       });
