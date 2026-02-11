@@ -837,7 +837,7 @@ function matchTemplate(input){
 function matchMotions(input, pieces){
   const t=input.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const allMotions=[];let totalCams=0;
-  const motionKeys={marche:['marche','walk','avance','court','run'],queue:['queue','tail','remue'],ailes:['aile','bat','fly','vole','envol'],tete:['tete','head','hoche','nod','picore','peck'],wave:['wave','salue','bras','patte','main','hand'],nage:['nage','swim','ondule'],bob:['plonge','bob','monte','descend','bounce','saute','jump'],pince:['pince','claque','claw','snap'],helice:['helice','tourne','spin','pale','propeller'],ondule:['serpente','ondule','wiggle','slither'],trompe:['trompe','trunk','barrit'],roule:['roule','roll','wheel','roue','avance'],flamme:['flamme','flame','feu','fire','brule'],balance:['balance','swing','bercer','doux','gentle','bouge','vent','souffle']};
+  const motionKeys={marche:['marche','walk','avance','court','run'],queue:['queue','tail','remue'],ailes:['aile','bat','fly','vole','envol'],tete:['tete','head','hoche','nod','picore','peck'],wave:['wave','salue','bras','main','hand'],nage:['nage','swim'],bob:['plonge','bob','monte','descend','bounce','saute','jump'],pince:['pince','claque','claw','snap'],helice:['helice','tourne','spin','pale','propeller'],ondule:['serpente','ondule','wiggle','slither'],trompe:['trompe','trunk','barrit'],roule:['roule','roll','wheel','roue'],flamme:['flamme','flame','feu','fire','brule'],balance:['balance','swing','bercer','doux','gentle','vent','souffle']};
 
   for(const[k,words]of Object.entries(motionKeys)){
     if(words.some(w=>t.includes(w))){
@@ -850,6 +850,25 @@ function matchMotions(input, pieces){
         });
         totalCams+=result.cam_count;
       }
+    }
+  }
+
+  // Handle "bouge" as generic — if "bouge" + specific piece name, only move that piece
+  if(allMotions.length===0 && t.includes('bouge')){
+    const pieceMatch=pieces.find(p=>{
+      const pn=p.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      const pid=p.id.toLowerCase();
+      return t.includes(pn)||t.includes(pid);
+    });
+    if(pieceMatch){
+      allMotions.push({
+        piece_id:pieceMatch.id,
+        motion:"OSCILLATE",
+        pivot:pieceMatch.id.includes('patte')||pieceMatch.id.includes('jambe')?"top":pieceMatch.id.includes('queue')?"left":"bottom",
+        amplitude:pieceMatch.id.includes('patte')?25:pieceMatch.id.includes('queue')?40:20,
+        speed:"medium",phase:0,cam_profile:"smooth",cam_index:0
+      });
+      totalCams=1;
     }
   }
 
@@ -1250,15 +1269,6 @@ function doGenerate(){
   a.download=`automata_${figurine.name.replace(/[^a-zA-Z0-9]/g,'_')}.stl`;
   a.click();
   URL.revokeObjectURL(url);
-
-  // Also save JSON config
-  const config={version:"6.6",figurine,mechanism:{cam_count:nCams,box:{w:boxW,d:boxD,h:boxH},shaft:{r:shaftR,len:shaftLen}},motions:motions.motions};
-  const jBlob=new Blob([JSON.stringify(config,null,2)],{type:'application/json'});
-  const jUrl=URL.createObjectURL(jBlob);
-  const a2=document.createElement('a');
-  a2.href=jUrl;a2.download=`automata_${figurine.name.replace(/[^a-zA-Z0-9]/g,'_')}_config.json`;
-  a2.click();
-  URL.revokeObjectURL(jUrl);
 }
 
 /* ═══════════════════════════════════════════
