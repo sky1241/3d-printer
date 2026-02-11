@@ -161,7 +161,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
   <div class="topbar-drive">
     <div class="drive-chip on-b" id="dCrank" onclick="setDrive(0)"><span>🖐️</span> Manivelle</div>
     <div class="drive-chip" id="dMotor" onclick="setDrive(1)"><span>⚡</span> Moteur</div>
-    <button class="topbar-gen" id="btnGenerate" disabled onclick="doGenerate()">⬇ EXPORTER CONFIG</button>
+    <button class="topbar-gen" id="btnGenerate" disabled onclick="doGenerate()">⬇ GÉNÉRER STL</button>
   </div>
 </div>
 
@@ -1376,21 +1376,26 @@ function startRenderer(){
       return {lift,profile,motion,pieces,amplitude:maxAmp};
     }
 
-    // Real cam radius function: base circle + profile displacement
+    // Real cam radius: CONCENTRATED LOBE — bump over ~120° then flat base
     function realCamRadius(angle,camData,rotOffset){
-      const baseR=camData.baseR||4;
+      const baseR=camData.baseR||3;
       const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
       let displacement=0;
+      const lift=camData.lift;
       if(camData.profile==='smooth'){
-        displacement=camData.lift*(1-Math.cos(theta))/2;
+        // Lobe concentrated 0→π (180°), smooth sine, rest is base
+        if(theta<Math.PI) displacement=lift*Math.sin(theta);
+        else displacement=0;
       } else if(camData.profile==='sharp'){
-        if(theta<Math.PI/2) displacement=camData.lift*(theta/(Math.PI/2));
-        else if(theta<Math.PI) displacement=camData.lift*(1-(theta-Math.PI/2)/(Math.PI/2));
+        // Triangle lobe: 0→π/3 rise, π/3→2π/3 fall, rest flat
+        if(theta<Math.PI/3) displacement=lift*(theta/(Math.PI/3));
+        else if(theta<Math.PI*2/3) displacement=lift*(1-(theta-Math.PI/3)/(Math.PI/3));
         else displacement=0;
       } else if(camData.profile==='dwell'){
-        if(theta<Math.PI/3) displacement=camData.lift*(theta/(Math.PI/3));
-        else if(theta<Math.PI) displacement=camData.lift;
-        else if(theta<Math.PI*4/3) displacement=camData.lift*(1-(theta-Math.PI)/(Math.PI/3));
+        // Rise 0→π/4, dwell π/4→3π/4, fall 3π/4→π, rest flat
+        if(theta<Math.PI/4) displacement=lift*(theta/(Math.PI/4));
+        else if(theta<Math.PI*3/4) displacement=lift;
+        else if(theta<Math.PI) displacement=lift*(1-(theta-Math.PI*3/4)/(Math.PI/4));
         else displacement=0;
       }
       return baseR+displacement;
