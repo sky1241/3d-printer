@@ -1219,138 +1219,194 @@ function startRenderer(){
     });
 
     // ══════════════════════════════════════
-    // MECHANISM — 3D (bottom 42%)
+    // MECHANISM — Premium Industrial 3D
     // ══════════════════════════════════════
-    const mechCX=w/2,mechCY=mechY+(h-mechY)*0.45;
-    const msc=Math.min(w,h)/220*zoom;
+    const mechCX=w/2,mechCY=mechY+(h-mechY)*0.48;
+    const msc=Math.min(w,h)/200*zoom;
     const mcr=Math.cos(rotAngle),msr=Math.sin(rotAngle);
     function mproj(x,y,z){return[mechCX+(x*mcr-y*msr*0.55)*msc,mechCY+(-z*0.82+x*msr*0.32+y*mcr*0.32)*msc];}
 
-    // Chassis box — bigger
-    const bw=60,bd=40,bh=32;
+    const bw=65,bd=42,bh=34;
+
+    // ── Chassis with depth/shadow ──
     const bv=[[-bw/2,-bd/2,0],[bw/2,-bd/2,0],[bw/2,bd/2,0],[-bw/2,bd/2,0],[-bw/2,-bd/2,bh],[bw/2,-bd/2,bh],[bw/2,bd/2,bh],[-bw/2,bd/2,bh]].map(v=>mproj(...v));
-    // Bottom face
-    ctx.strokeStyle='rgba(255,107,53,.12)';ctx.fillStyle='rgba(255,107,53,.008)';ctx.lineWidth=0.6;
+    
+    // Shadow underneath
+    ctx.fillStyle='rgba(0,0,0,.12)';
+    ctx.beginPath();[0,1,2,3].forEach((vi,i)=>{const ox=bv[vi][0]+3,oy=bv[vi][1]+4;i===0?ctx.moveTo(ox,oy):ctx.lineTo(ox,oy);});ctx.closePath();ctx.fill();
+
+    // Floor
+    const floorGrad=ctx.createLinearGradient(bv[0][0],bv[0][1],bv[2][0],bv[2][1]);
+    floorGrad.addColorStop(0,'rgba(255,107,53,.018)');floorGrad.addColorStop(1,'rgba(255,107,53,.004)');
+    ctx.fillStyle=floorGrad;ctx.strokeStyle='rgba(255,107,53,.1)';ctx.lineWidth=0.6;
     ctx.beginPath();[0,1,2,3].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.fill();ctx.stroke();
-    // Side faces (semi-transparent to see inside)
-    [[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]].forEach(face=>{
-      ctx.strokeStyle='rgba(255,107,53,.15)';ctx.fillStyle='rgba(255,107,53,.008)';ctx.lineWidth=0.7;
+
+    // Side walls (gradient for depth)
+    [[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]].forEach((face,fi)=>{
+      const alpha=fi<2?0.06:0.03; // front faces brighter
+      ctx.strokeStyle=`rgba(255,107,53,${alpha+0.04})`;
+      ctx.fillStyle=`rgba(255,107,53,${alpha*0.15})`;
+      ctx.lineWidth=0.6;
       ctx.beginPath();face.forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.fill();ctx.stroke();
     });
-    // Top face (open — no fill, just dashed outline to show it's open-top)
-    ctx.strokeStyle='rgba(255,107,53,.08)';ctx.lineWidth=0.5;ctx.setLineDash([4,4]);
-    ctx.beginPath();[4,5,6,7].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.stroke();
-    ctx.setLineDash([]);
 
-    // Bearing supports (vertical pillars inside box)
-    const bearingY=[-bd*0.35, bd*0.35];
+    // Top rim (dashed = open box)
+    ctx.strokeStyle='rgba(255,107,53,.06)';ctx.lineWidth=0.4;ctx.setLineDash([3,5]);
+    ctx.beginPath();[4,5,6,7].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+
+    // ── Main shaft with metallic look ──
+    const shZ=bh*0.5;
+    const[shx1,shy1]=mproj(0,-bd*0.65,shZ),[shx2,shy2]=mproj(0,bd*0.65,shZ);
+    // Shaft shadow
+    ctx.strokeStyle='rgba(0,0,0,.08)';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(shx1+1,shy1+2);ctx.lineTo(shx2+1,shy2+2);ctx.stroke();
+    // Shaft body (gradient emulation — thick + thin overlay)
+    ctx.strokeStyle='rgba(180,180,200,.18)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
+    ctx.strokeStyle='rgba(220,220,240,.12)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
+    // Highlight line (thin bright center)
+    ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(shx1,shy1-0.5);ctx.lineTo(shx2,shy2-0.5);ctx.stroke();
+
+    // ── Bearing mounts ──
+    const bearingY=[-bd*0.38,bd*0.38];
     bearingY.forEach(by=>{
-      const[b1x,b1y]=mproj(-3,by,2);const[b2x,b2y]=mproj(-3,by,bh*0.55);
-      const[b3x,b3y]=mproj(3,by,2);const[b4x,b4y]=mproj(3,by,bh*0.55);
-      ctx.strokeStyle='rgba(255,107,53,.12)';ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(b1x,b1y);ctx.lineTo(b2x,b2y);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(b3x,b3y);ctx.lineTo(b4x,b4y);ctx.stroke();
-      // Bearing circle
-      const[bcx,bcy]=mproj(0,by,bh*0.5);
-      ctx.strokeStyle='rgba(255,200,100,.2)';ctx.fillStyle='rgba(255,200,100,.03)';ctx.lineWidth=0.8;
-      ctx.beginPath();ctx.arc(bcx,bcy,3*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      const[bcx,bcy]=mproj(0,by,shZ);
+      // Bearing housing (outer)
+      ctx.strokeStyle='rgba(255,200,120,.12)';ctx.fillStyle='rgba(255,200,120,.02)';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.arc(bcx,bcy,4.5*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Inner ring
+      ctx.strokeStyle='rgba(255,200,120,.08)';ctx.lineWidth=0.5;
+      ctx.beginPath();ctx.arc(bcx,bcy,2.5*msc,0,Math.PI*2);ctx.stroke();
+      // Pillar left
+      const[p1x,p1y]=mproj(-4,by,3);const[p2x,p2y]=mproj(-4,by,shZ-1);
+      ctx.strokeStyle='rgba(255,150,80,.06)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p1x,p1y);ctx.lineTo(p2x,p2y);ctx.stroke();
+      // Pillar right
+      const[p3x,p3y]=mproj(4,by,3);const[p4x,p4y]=mproj(4,by,shZ-1);
+      ctx.beginPath();ctx.moveTo(p3x,p3y);ctx.lineTo(p4x,p4y);ctx.stroke();
     });
 
-    // Main shaft (thick, through bearings)
-    const shZ=bh*0.5;
-    const[shx1,shy1]=mproj(0,-bd*0.6,shZ),[shx2,shy2]=mproj(0,bd*0.6,shZ);
-    ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
-    // Shaft highlight
-    ctx.strokeStyle='rgba(255,255,255,.06)';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
-
-    // Cams — bigger, more detailed with lobes
+    // ── Cams — smooth, organic, with glow ──
     const nCams=motions?motions.cam_count:1;
     for(let ci=0;ci<Math.min(nCams,4);ci++){
       const ca=camAngle+ci*Math.PI*0.6;
-      const yOff=(ci-(Math.min(nCams,4)-1)/2)*(bd*0.3/Math.max(Math.min(nCams,4)-1,1));
-      const baseR=14-ci*1.5;
-      const camColor=['#ff6b35','#ff8c5a','#ffad85','#ffd0b5'][ci];
+      const yOff=(ci-(Math.min(nCams,4)-1)/2)*(bd*0.28/Math.max(Math.min(nCams,4)-1,1));
+      const baseR=15-ci*1.5;
+      const hue=25+ci*8; // orange → warm
+      const camColor=`hsl(${hue},90%,${58-ci*4}%)`;
+      const camColorA=`hsla(${hue},90%,${58-ci*4}%,`;
 
-      // Cam body (thicker, with fill)
-      ctx.strokeStyle=camColor;ctx.fillStyle=camColor+'15';ctx.lineWidth=1.8;
-      ctx.beginPath();
-      for(let i=0;i<=64;i++){
-        const t=(i/64)*Math.PI*2;
-        const r=baseR+5*Math.sin(t*2+ca)+2*Math.sin(t*3+ca*1.3);
-        const[cpx,cpy]=mproj(r*Math.cos(t),yOff+r*Math.sin(t)*0.3,shZ);
-        i===0?ctx.moveTo(cpx,cpy):ctx.lineTo(cpx,cpy);
+      // Cam glow (outer)
+      const[gcx,gcy]=mproj(0,yOff,shZ);
+      ctx.shadowColor=camColor;ctx.shadowBlur=8*msc;
+
+      // Cam profile — smoother with 96 points
+      const camPts=[];
+      for(let i=0;i<=96;i++){
+        const t=(i/96)*Math.PI*2;
+        const r=baseR+5.5*Math.sin(t*2+ca)+2*Math.sin(t*3+ca*1.3)+0.8*Math.sin(t*5+ca*0.7);
+        camPts.push(mproj(r*Math.cos(t),yOff+r*Math.sin(t)*0.3,shZ));
       }
-      ctx.closePath();ctx.fill();ctx.stroke();
 
-      // Cam center hole
-      const[ccx,ccy]=mproj(0,yOff,shZ);
-      ctx.strokeStyle=camColor+'60';ctx.fillStyle='rgba(6,6,10,.5)';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(ccx,ccy,2.5*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Cam fill
+      ctx.fillStyle=camColorA+'0.06)';ctx.strokeStyle=camColorA+'0.5)';ctx.lineWidth=1.6;
+      ctx.beginPath();camPts.forEach((p,i)=>{i===0?ctx.moveTo(...p):ctx.lineTo(...p);});ctx.closePath();ctx.fill();ctx.stroke();
 
-      // Follower rod
-      const lift=5*Math.sin(ca)+2*Math.sin(ca*1.3);
-      const[f1x,f1y]=mproj(0,yOff,shZ+baseR-2);
-      const[f2x,f2y]=mproj(0,yOff,shZ+baseR+lift+14);
-      ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
+      // Cam inner edge (depth illusion)
+      ctx.strokeStyle=camColorA+'0.15)';ctx.lineWidth=0.6;
+      ctx.beginPath();
+      for(let i=0;i<=96;i++){
+        const t=(i/96)*Math.PI*2;
+        const r=(baseR+5.5*Math.sin(t*2+ca)+2*Math.sin(t*3+ca*1.3))*0.7;
+        const[px,py]=mproj(r*Math.cos(t),yOff+r*Math.sin(t)*0.3,shZ);
+        i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+      }
+      ctx.closePath();ctx.stroke();
 
-      // Follower roller (circle at cam contact)
-      const rollerR=baseR+5*Math.sin(Math.PI/2*2+ca)+2*Math.sin(Math.PI/2*3+ca*1.3);
-      const[frx,fry]=mproj(0,yOff,shZ+rollerR);
-      ctx.strokeStyle='#fbbf24';ctx.fillStyle='rgba(251,191,36,.1)';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(frx,fry,2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.shadowBlur=0;
 
-      // Follower top plate (connects to figurine)
-      const[ft1x,ft1y]=mproj(-4,yOff,shZ+baseR+lift+14);
-      const[ft2x,ft2y]=mproj(4,yOff,shZ+baseR+lift+14);
-      ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(ft1x,ft1y);ctx.lineTo(ft2x,ft2y);ctx.stroke();
+      // Center bore
+      ctx.fillStyle='rgba(8,8,14,.6)';ctx.strokeStyle=camColorA+'0.3)';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.arc(gcx,gcy,2.5*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Key slot
+      ctx.strokeStyle=camColorA+'0.2)';ctx.lineWidth=0.5;
+      ctx.beginPath();ctx.moveTo(gcx,gcy-2.5*msc);ctx.lineTo(gcx,gcy-1.5*msc);ctx.stroke();
 
-      // Cam label
-      ctx.fillStyle=camColor+'80';ctx.font='500 6px DM Sans';ctx.textAlign='center';
-      const[clx,cly]=mproj(0,yOff,shZ-baseR-4);
-      ctx.fillText('Cam '+(ci+1),clx,cly);
+      // ── Follower assembly ──
+      const lift=5.5*Math.sin(ca)+2*Math.sin(ca*1.3);
+      const maxR=baseR+5.5+2+0.8;
+      const contactAngle=Math.PI/2; // top of cam
+      const contactR=baseR+5.5*Math.sin(contactAngle*2+ca)+2*Math.sin(contactAngle*3+ca*1.3);
+
+      // Follower rod — metallic
+      const[f1x,f1y]=mproj(0,yOff,shZ+contactR-1);
+      const[f2x,f2y]=mproj(0,yOff,shZ+maxR+lift+16);
+      // Rod shadow
+      ctx.strokeStyle='rgba(0,0,0,.06)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(f1x+1,f1y+1);ctx.lineTo(f2x+1,f2y+1);ctx.stroke();
+      // Rod body
+      ctx.strokeStyle='rgba(251,191,36,.3)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
+      ctx.strokeStyle='rgba(251,191,36,.15)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
+
+      // Roller at contact
+      const[frx,fry]=mproj(0,yOff,shZ+contactR);
+      ctx.fillStyle='rgba(251,191,36,.08)';ctx.strokeStyle='rgba(251,191,36,.35)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(frx,fry,2.2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+      // Top platform (T-bar)
+      const platW=6;
+      const[pt1x,pt1y]=mproj(-platW,yOff,shZ+maxR+lift+16);
+      const[pt2x,pt2y]=mproj(platW,yOff,shZ+maxR+lift+16);
+      ctx.strokeStyle='rgba(251,191,36,.25)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(pt1x,pt1y);ctx.lineTo(pt2x,pt2y);ctx.stroke();
+
+      // Cam label (subtle)
+      ctx.fillStyle=camColorA+'0.3)';ctx.font='500 5.5px DM Sans';ctx.textAlign='center';
+      const[clx,cly]=mproj(0,yOff,shZ-maxR-3);
+      ctx.fillText('CAM '+(ci+1),clx,cly);
     }
 
-    // Drive mechanism
+    // ── Drive ──
     if(drive===0){
-      // Crank handle
       const cA=camAngle;
-      const[hx,hy]=mproj(0,-bd*0.6-3,shZ);
-      const crankR=12;
-      const[hex,hey]=mproj(crankR*Math.cos(cA),-bd*0.6-3+crankR*Math.sin(cA)*0.3,shZ+crankR*Math.sin(cA)*0.5);
-      ctx.strokeStyle='rgba(96,165,250,.45)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hex,hey);ctx.stroke();
-      // Handle knob
-      ctx.fillStyle='rgba(96,165,250,.2)';ctx.strokeStyle='rgba(96,165,250,.5)';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(hex,hey,3,0,Math.PI*2);ctx.fill();ctx.stroke();
-      // Label
-      ctx.fillStyle='rgba(96,165,250,.4)';ctx.font='500 6px DM Sans';ctx.textAlign='center';
-      ctx.fillText('Manivelle',hx,hy+10);
+      const[hx,hy]=mproj(0,-bd*0.65-2,shZ);
+      const crankR=14;
+      // Crank arm
+      const[hex,hey]=mproj(crankR*Math.cos(cA),-bd*0.65-2+crankR*Math.sin(cA)*0.3,shZ+crankR*Math.sin(cA)*0.4);
+      ctx.strokeStyle='rgba(96,165,250,.3)';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hex,hey);ctx.stroke();
+      ctx.strokeStyle='rgba(96,165,250,.15)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hex,hey);ctx.stroke();
+      // Pivot
+      ctx.fillStyle='rgba(96,165,250,.1)';ctx.strokeStyle='rgba(96,165,250,.3)';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.arc(hx,hy,2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Handle ball
+      ctx.fillStyle='rgba(96,165,250,.15)';ctx.strokeStyle='rgba(96,165,250,.45)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.arc(hex,hey,3.5,0,Math.PI*2);ctx.fill();ctx.stroke();
+      // Glow
+      ctx.shadowColor='rgba(96,165,250,.3)';ctx.shadowBlur=6;
+      ctx.beginPath();ctx.arc(hex,hey,2,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;
     }else{
-      // Motor
-      const[mx,my]=mproj(bw/2+10,-bd/3,bh*0.3);
-      ctx.strokeStyle='rgba(255,107,53,.3)';ctx.fillStyle='rgba(255,107,53,.06)';ctx.lineWidth=1.2;
-      ctx.beginPath();ctx.arc(mx,my,7,0,Math.PI*2);ctx.fill();ctx.stroke();
-      // Motor housing
-      ctx.fillStyle='rgba(255,107,53,.03)';ctx.strokeStyle='rgba(255,107,53,.2)';
-      ctx.beginPath();ctx.roundRect(mx-8,my-10,16,20,2);ctx.fill();ctx.stroke();
-      ctx.fillStyle='rgba(255,107,53,.3)';ctx.font='bold 6px DM Sans';ctx.textAlign='center';ctx.fillText('M',mx,my+3);
+      const[mx,my]=mproj(bw/2+10,-bd/3,bh*0.35);
+      // Motor body
+      ctx.fillStyle='rgba(255,107,53,.03)';ctx.strokeStyle='rgba(255,107,53,.2)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.roundRect(mx-7,my-9,14,18,2);ctx.fill();ctx.stroke();
+      // Motor cap
+      ctx.fillStyle='rgba(255,107,53,.05)';ctx.strokeStyle='rgba(255,107,53,.25)';ctx.lineWidth=0.8;
+      ctx.beginPath();ctx.arc(mx,my-9,5,Math.PI,0);ctx.fill();ctx.stroke();
+      ctx.fillStyle='rgba(255,107,53,.25)';ctx.font='bold 5px DM Sans';ctx.textAlign='center';ctx.fillText('M',mx,my+3);
       // Shaft connection
-      const[msx,msy]=mproj(bw/2,0,shZ);
-      ctx.strokeStyle='rgba(255,107,53,.15)';ctx.lineWidth=1;ctx.setLineDash([2,2]);
+      const[msx,msy]=mproj(bw/2-2,0,shZ);
+      ctx.strokeStyle='rgba(255,107,53,.1)';ctx.lineWidth=1;ctx.setLineDash([2,3]);
       ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(msx,msy);ctx.stroke();ctx.setLineDash([]);
     }
 
-    // Connection lines from followers to figurine (dotted, upward)
+    // ── Dotted connections to figurine ──
     if(motions&&motions.motions.length>0){
       const usedCams=new Set(motions.motions.map(m=>m.cam_index||0));
       usedCams.forEach(ci=>{
         const ca=camAngle+ci*Math.PI*0.6;
-        const yOff=(ci-(Math.min(nCams,4)-1)/2)*(bd*0.3/Math.max(Math.min(nCams,4)-1,1));
-        const baseR=14-ci*1.5;
-        const lift=5*Math.sin(ca)+2*Math.sin(ca*1.3);
-        const[ftx,fty]=mproj(0,yOff,shZ+baseR+lift+14);
-        // Line going up to figurine area
-        ctx.strokeStyle='rgba(251,191,36,.08)';ctx.lineWidth=0.8;ctx.setLineDash([2,4]);
-        ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-20);ctx.stroke();ctx.setLineDash([]);
+        const yOff=(ci-(Math.min(nCams,4)-1)/2)*(bd*0.28/Math.max(Math.min(nCams,4)-1,1));
+        const baseR=15-ci*1.5;
+        const maxR=baseR+5.5+2+0.8;
+        const lift=5.5*Math.sin(ca)+2*Math.sin(ca*1.3);
+        const[ftx,fty]=mproj(0,yOff,shZ+maxR+lift+16);
+        ctx.strokeStyle='rgba(251,191,36,.06)';ctx.lineWidth=0.6;ctx.setLineDash([2,5]);
+        ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-12);ctx.stroke();ctx.setLineDash([]);
       });
     }
 
