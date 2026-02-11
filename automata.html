@@ -6,6 +6,7 @@
 <title>🔩 Automata Generator V5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;0,9..40,900;1,9..40,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -202,6 +203,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
 <div class="center">
   <div class="canvas-wrap">
     <canvas id="mainCanvas"></canvas>
+    <div id="mechView3D" style="position:absolute;bottom:0;left:0;right:0;height:42%;border-top:1px solid rgba(255,255,255,.06);display:none;background:#111;"></div>
     <div class="zoom-bar">
       <button onclick="toggleExplode()" id="btnExplode" title="Vue éclatée">💥</button>
       <button onclick="zoomIn()">＋</button>
@@ -1071,6 +1073,7 @@ function setProfile(prof){
     const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
     if(m) m.cam_profile=prof;
   }
+  if(typeof update3DMechanism==='function') update3DMechanism();
 }
 function setPivot(piv){
   // handled by onclick, update motion
@@ -1092,6 +1095,7 @@ function updateParam(){
     const m=motions.motions.find(mo=>mo.piece_id===selectedPiece);
     if(m){m.amplitude=+amp;m.speed=speeds[spd-1]<=0.5?'slow':speeds[spd-1]<=1.5?'medium':'fast';}
   }
+  if(typeof update3DMechanism==='function') update3DMechanism();
 }
 
 // ═══════════════════════════════════════════
@@ -1411,235 +1415,13 @@ function startRenderer(){
       }
     });
 
+
     // ══════════════════════════════════════
-    // MECHANISM — SOLID opaque (like real printed parts)
+    // MECHANISM — 3D Three.js viewer
     // ══════════════════════════════════════
-    const mechCX=w/2,mechCY=mechY+(h-mechY)*0.5;
-    const msc=Math.min(w,h)/180*zoom;
-
-    function mproj(x,y,z){
-      return[mechCX + x*msc - y*msc*0.4, mechCY - z*msc*0.7 + y*msc*0.35];
-    }
-
-    const bw=70,bd=30,bh=28;
-    const bv=[[-bw/2,-bd/2,0],[bw/2,-bd/2,0],[bw/2,bd/2,0],[-bw/2,bd/2,0],[-bw/2,-bd/2,bh],[bw/2,-bd/2,bh],[bw/2,bd/2,bh],[-bw/2,bd/2,bh]].map(v=>mproj(...v));
-
-    // Shadow
-    ctx.fillStyle='rgba(0,0,0,.2)';
-    ctx.beginPath();[0,1,2,3].forEach((vi,i)=>{const ox=bv[vi][0]+5,oy=bv[vi][1]+6;i===0?ctx.moveTo(ox,oy):ctx.lineTo(ox,oy);});ctx.closePath();ctx.fill();
-
-    // SOLID box faces — wood/PLA colors
-    // Floor
-    ctx.fillStyle='#2A2520';ctx.strokeStyle='#3D3530';ctx.lineWidth=1;
-    ctx.beginPath();[0,1,2,3].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.fill();ctx.stroke();
-    // Back wall
-    ctx.fillStyle='#332E28';ctx.strokeStyle='#443D35';ctx.lineWidth=1;
-    ctx.beginPath();[3,0,4,7].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.fill();ctx.stroke();
-    // Left wall
-    ctx.fillStyle='#3A342D';ctx.strokeStyle='#4A433A';ctx.lineWidth=1;
-    ctx.beginPath();[0,1,5,4].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.fill();ctx.stroke();
-    // Front walls (transparent — see inside)
-    ctx.strokeStyle='#4A433A';ctx.lineWidth=0.6;ctx.setLineDash([4,3]);
-    ctx.beginPath();[1,2,6,5].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.stroke();
-    ctx.beginPath();[2,3,7,6].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.stroke();
-    ctx.setLineDash([]);
-    // Top rim
-    ctx.strokeStyle='#55493E';ctx.lineWidth=1.2;
-    ctx.beginPath();[4,5,6,7].forEach((vi,i)=>{i===0?ctx.moveTo(...bv[vi]):ctx.lineTo(...bv[vi]);});ctx.closePath();ctx.stroke();
-
-    // ── SHAFT — solid metallic cylinder ──
-    const shZ=bh*0.45;
-    const shLen=bw*0.75;
-    const[shx1,shy1]=mproj(-shLen/2,0,shZ),[shx2,shy2]=mproj(shLen/2,0,shZ);
-    // Shadow
-    ctx.strokeStyle='rgba(0,0,0,.25)';ctx.lineWidth=6;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(shx1+1,shy1+2);ctx.lineTo(shx2+1,shy2+2);ctx.stroke();
-    // Body — solid gray
-    ctx.strokeStyle='#787878';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
-    // Highlight
-    ctx.strokeStyle='#999';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(shx1,shy1);ctx.lineTo(shx2,shy2);ctx.stroke();
-    ctx.strokeStyle='#AAA';ctx.lineWidth=0.8;ctx.beginPath();ctx.moveTo(shx1,shy1-1);ctx.lineTo(shx2,shy2-1);ctx.stroke();
-    ctx.lineCap='butt';
-
-    // ── Bearings — solid ──
-    [[-shLen/2-1,0,shZ],[shLen/2+1,0,shZ]].forEach(pos=>{
-      const[bx,by]=mproj(...pos);
-      // Pillar supports
-      const[l1x,l1y]=mproj(pos[0]-2.5,pos[1],1);const[l2x,l2y]=mproj(pos[0]-2.5,pos[1],shZ-1);
-      const[l3x,l3y]=mproj(pos[0]+2.5,pos[1],1);const[l4x,l4y]=mproj(pos[0]+2.5,pos[1],shZ-1);
-      ctx.strokeStyle='#5A4E42';ctx.lineWidth=2.5;
-      ctx.beginPath();ctx.moveTo(l1x,l1y);ctx.lineTo(l2x,l2y);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(l3x,l3y);ctx.lineTo(l4x,l4y);ctx.stroke();
-      // Housing
-      ctx.fillStyle='#6B5E52';ctx.strokeStyle='#7D6E60';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(bx,by,4*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
-      // Inner
-      ctx.fillStyle='#555';ctx.strokeStyle='#666';ctx.lineWidth=0.8;
-      ctx.beginPath();ctx.arc(bx,by,2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
-    });
-
-    // ── CAMS — REAL profiles from motion data ──
-    const nCams=motions?motions.cam_count:1;
-    
-    // Pre-compute real cam profiles from motion assignments
-    function buildCamProfile(camIdx){
-      if(!motions) return {lift:4,profile:'smooth',pieces:[]};
-      const pieces=motions.motions.filter(m=>m.cam_index===camIdx);
-      if(pieces.length===0) return {lift:4,profile:'smooth',pieces:[]};
-      // Take max amplitude among pieces on this cam
-      const maxAmp=Math.max(...pieces.map(m=>m.amplitude));
-      const profile=pieces[0].cam_profile||'smooth';
-      const motion=pieces[0].motion||'OSCILLATE';
-      // Convert amplitude to real mm lift
-      // OSCILLATE: degrees → mm via ~15mm lever arm: lift = 15*sin(amp°)
-      // TRANSLATE: direct mm, scaled
-      let lift;
-      if(motion==='ROTATE') lift=3; // eccentric for rotation
-      else if(motion==='TRANSLATE_V'||motion==='TRANSLATE_H') lift=maxAmp*0.4;
-      else lift=15*Math.sin(maxAmp*Math.PI/180); // OSCILLATE
-      lift=Math.max(2,Math.min(lift,10)); // clamp 2-10mm
-      return {lift,profile,motion,pieces,amplitude:maxAmp};
-    }
-
-    // Real cam radius: CONCENTRATED LOBE — bump over ~120° then flat base
-    function realCamRadius(angle,camData,rotOffset){
-      const baseR=camData.baseR||3;
-      const theta=((angle-rotOffset)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
-      let displacement=0;
-      const lift=camData.lift;
-      if(camData.profile==='smooth'){
-        // Lobe concentrated 0→π (180°), smooth sine, rest is base
-        if(theta<Math.PI) displacement=lift*Math.sin(theta);
-        else displacement=0;
-      } else if(camData.profile==='sharp'){
-        // Triangle lobe: 0→π/3 rise, π/3→2π/3 fall, rest flat
-        if(theta<Math.PI/3) displacement=lift*(theta/(Math.PI/3));
-        else if(theta<Math.PI*2/3) displacement=lift*(1-(theta-Math.PI/3)/(Math.PI/3));
-        else displacement=0;
-      } else if(camData.profile==='dwell'){
-        // Rise 0→π/4, dwell π/4→3π/4, fall 3π/4→π, rest flat
-        if(theta<Math.PI/4) displacement=lift*(theta/(Math.PI/4));
-        else if(theta<Math.PI*3/4) displacement=lift;
-        else if(theta<Math.PI) displacement=lift*(1-(theta-Math.PI*3/4)/(Math.PI/4));
-        else displacement=0;
-      }
-      return baseR+displacement;
-    }
-
-    for(let ci=0;ci<Math.min(nCams,4);ci++){
-      const ca=camAngle+ci*Math.PI*0.6;
-      const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
-      const camData=buildCamProfile(ci);
-      // FORCE visible lobe: base=3mm, lift=min 7mm so ratio is always >3:1
-      const baseR=3;
-      const realLift=Math.max(7,camData.lift*1.5);
-      const visCamData={...camData,lift:realLift,baseR};
-
-      const camFill=['#D4652A','#C85A22','#BC4F1C','#A84518'][ci];
-      const camEdge=['#E87840','#D96C35','#CC602B','#BB5520'][ci];
-      const camDark=['#A04A1A','#944016','#883812','#7C3010'][ci];
-
-      const[gcx,gcy]=mproj(xOff,0,shZ);
-      const camThick=3*msc;
-
-      // Bottom edge
-      ctx.fillStyle=camDark;ctx.strokeStyle=camDark;ctx.lineWidth=1;
-      ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.6+camThick;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
-      ctx.closePath();ctx.fill();ctx.stroke();
-
-      // Side rim
-      for(let i=0;i<=72;i++){
-        const t=(i/72)*Math.PI*2;
-        if(Math.sin(t)>-0.2){
-          const r=realCamRadius(t,visCamData,ca);
-          const px=gcx+r*Math.cos(t)*msc;
-          const pyTop=gcy+r*Math.sin(t)*msc*0.6;
-          const pyBot=pyTop+camThick;
-          ctx.strokeStyle=camDark;ctx.lineWidth=1.2;
-          ctx.beginPath();ctx.moveTo(px,pyTop);ctx.lineTo(px,pyBot);ctx.stroke();
-        }
-      }
-
-      // Top face
-      ctx.fillStyle=camFill;ctx.strokeStyle=camEdge;ctx.lineWidth=1.5;
-      ctx.beginPath();
-      for(let i=0;i<=72;i++){const t=(i/72)*Math.PI*2;const r=realCamRadius(t,visCamData,ca);const px=gcx+r*Math.cos(t)*msc;const py=gcy+r*Math.sin(t)*msc*0.6;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}
-      ctx.closePath();ctx.fill();ctx.stroke();
-
-      // Center bore
-      ctx.fillStyle='#222';ctx.strokeStyle='#444';ctx.lineWidth=0.8;
-      ctx.beginPath();ctx.ellipse(gcx,gcy,1.5*msc,1.5*msc*0.6,0,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-      // ── Follower — driven by REAL cam ──
-      const topAngle=Math.PI*1.5; // follower sits on top
-      const contactR=realCamRadius(topAngle,visCamData,ca);
-      const lift=contactR-baseR;
-
-      const[f1x,f1y]=mproj(xOff,0,shZ+contactR);
-      const[f2x,f2y]=mproj(xOff,0,shZ+baseR+visCamData.lift+10+lift);
-      ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=4;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(f1x+1,f1y+1);ctx.lineTo(f2x+1,f2y+1);ctx.stroke();
-      ctx.strokeStyle='#C4A44A';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
-      ctx.strokeStyle='#D4B85A';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
-      ctx.lineCap='butt';
-
-      // Roller
-      const[rlx,rly]=mproj(xOff,0,shZ+contactR);
-      ctx.fillStyle='#B89838';ctx.strokeStyle='#C8A848';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(rlx,rly,2.2*msc,0,Math.PI*2);ctx.fill();ctx.stroke();
-
-      // T-bar
-      const platW=5;
-      const[pt1x,pt1y]=mproj(xOff-platW,0,shZ+baseR+visCamData.lift+10+lift);
-      const[pt2x,pt2y]=mproj(xOff+platW,0,shZ+baseR+visCamData.lift+10+lift);
-      ctx.strokeStyle='#C4A44A';ctx.lineWidth=2;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(pt1x,pt1y);ctx.lineTo(pt2x,pt2y);ctx.stroke();ctx.lineCap='butt';
-
-      // Label — show real data
-      const profileLabel=camData.profile==='smooth'?'Harm.':camData.profile==='sharp'?'Tri.':'Dwell';
-      const ampLabel=camData.amplitude?Math.round(camData.amplitude)+'°':'';
-      ctx.fillStyle='rgba(255,180,80,.5)';ctx.font='600 6px DM Sans';ctx.textAlign='center';
-      const maxR=baseR+visCamData.lift;
-      ctx.fillText(`CAM ${ci+1} · ${profileLabel} ${ampLabel}`,gcx,gcy+maxR*msc*0.6+camThick+9);
-    }
-
-    // ── Drive — solid ──
-    if(drive===0){
-      const cA=camAngle;
-      const[hx,hy]=mproj(-shLen/2-6,0,shZ);
-      const crankR=10;
-      const cx2=hx+crankR*Math.cos(cA), cy2=hy+crankR*Math.sin(cA);
-      // Arm
-      ctx.strokeStyle='#556B8A';ctx.lineWidth=3;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(cx2,cy2);ctx.stroke();
-      ctx.strokeStyle='#6B82A5';ctx.lineWidth=1.5;
-      ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(cx2,cy2);ctx.stroke();
-      // Pivot
-      ctx.fillStyle='#4A5E78';ctx.strokeStyle='#6B82A5';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(hx,hy,2.5,0,Math.PI*2);ctx.fill();ctx.stroke();
-      // Handle ball
-      ctx.fillStyle='#5A7090';ctx.strokeStyle='#7B98B8';ctx.lineWidth=1;
-      ctx.beginPath();ctx.arc(cx2,cy2,4,0,Math.PI*2);ctx.fill();ctx.stroke();
-      ctx.lineCap='butt';
-    }else{
-      const[mx,my]=mproj(shLen/2+8,0,shZ);
-      ctx.fillStyle='#4A4038';ctx.strokeStyle='#5A5048';ctx.lineWidth=1;
-      ctx.beginPath();ctx.roundRect(mx-6,my-9,12,18,2);ctx.fill();ctx.stroke();
-      ctx.fillStyle='#8A7A68';ctx.font='bold 6px DM Sans';ctx.textAlign='center';ctx.fillText('M',mx,my+3);
-    }
-
-    // ── Connection lines ──
-    if(motions&&motions.motions.length>0){
-      const usedCams=new Set(motions.motions.map(m=>m.cam_index||0));
-      usedCams.forEach(ci=>{
-        const xOff=(ci-(Math.min(nCams,4)-1)/2)*(shLen*0.5/Math.max(Math.min(nCams,4)-1,1));
-        const camData=buildCamProfile(ci);
-        const realLift=Math.max(7,camData.lift*1.5);
-        const[ftx,fty]=mproj(xOff,0,shZ+3+realLift+12);
-        ctx.strokeStyle='rgba(196,164,74,.12)';ctx.lineWidth=0.6;ctx.setLineDash([2,5]);
-        ctx.beginPath();ctx.moveTo(ftx,fty);ctx.lineTo(ftx,mechY-10);ctx.stroke();ctx.setLineDash([]);
-      });
+    if(motions && motions.motions.length>0){
+      const mv=document.getElementById('mechView3D');
+      if(mv.style.display==='none'){mv.style.display='block';init3DViewer();update3DMechanism();}
     }
 
     document.getElementById('statZoom').textContent='×'+zoom.toFixed(1);
@@ -1648,6 +1430,189 @@ function startRenderer(){
 
   if(anim) cancelAnimationFrame(anim);
   draw();
+}
+
+// ═══════════════════════════════════════════
+// THREE.JS 3D MECHANISM VIEWER
+// ═══════════════════════════════════════════
+let scene3D,camera3D,renderer3D,mechGroup,anim3D;
+let rotX3D=-0.4,rotY3D=0.6,drag3D=false,lastMX=0,lastMY=0;
+
+function init3DViewer(){
+  if(renderer3D) return;
+  const container=document.getElementById('mechView3D');
+  const w=container.clientWidth||600, h=container.clientHeight||300;
+
+  scene3D=new THREE.Scene();
+  scene3D.background=new THREE.Color(0x151515);
+
+  camera3D=new THREE.PerspectiveCamera(40,w/h,0.1,500);
+  camera3D.position.set(80,55,70);
+  camera3D.lookAt(0,15,0);
+
+  renderer3D=new THREE.WebGLRenderer({antialias:true});
+  renderer3D.setSize(w,h);
+  renderer3D.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  container.appendChild(renderer3D.domElement);
+
+  // Lights
+  scene3D.add(new THREE.AmbientLight(0xffffff,0.45));
+  const dir=new THREE.DirectionalLight(0xffffff,0.65);dir.position.set(50,80,60);scene3D.add(dir);
+  const dir2=new THREE.DirectionalLight(0x8899cc,0.25);dir2.position.set(-40,30,-50);scene3D.add(dir2);
+
+  // Grid
+  scene3D.add(new THREE.GridHelper(120,24,0x2a2a2a,0x1e1e1e));
+
+  mechGroup=new THREE.Group();
+  scene3D.add(mechGroup);
+
+  // Mouse orbit
+  const el=renderer3D.domElement;
+  el.addEventListener('mousedown',e=>{drag3D=true;lastMX=e.clientX;lastMY=e.clientY;});
+  window.addEventListener('mousemove',e=>{
+    if(!drag3D)return;
+    rotY3D+=(e.clientX-lastMX)*0.008;rotX3D+=(e.clientY-lastMY)*0.006;
+    rotX3D=Math.max(-1.0,Math.min(0.8,rotX3D));
+    lastMX=e.clientX;lastMY=e.clientY;updateCam3D();
+  });
+  window.addEventListener('mouseup',()=>drag3D=false);
+  el.addEventListener('wheel',e=>{
+    camera3D.position.multiplyScalar(e.deltaY>0?1.08:0.92);
+    updateCam3D();e.preventDefault();
+  },{passive:false});
+  // Touch orbit
+  el.addEventListener('touchstart',e=>{if(e.touches.length===1){drag3D=true;lastMX=e.touches[0].clientX;lastMY=e.touches[0].clientY;}},{passive:true});
+  el.addEventListener('touchmove',e=>{
+    if(!drag3D||e.touches.length!==1)return;
+    rotY3D+=(e.touches[0].clientX-lastMX)*0.008;rotX3D+=(e.touches[0].clientY-lastMY)*0.006;
+    rotX3D=Math.max(-1.0,Math.min(0.8,rotX3D));
+    lastMX=e.touches[0].clientX;lastMY=e.touches[0].clientY;updateCam3D();
+  },{passive:true});
+  el.addEventListener('touchend',()=>drag3D=false);
+
+  updateCam3D();
+  animate3D();
+
+  new ResizeObserver(()=>{
+    const w2=container.clientWidth,h2=container.clientHeight;
+    if(w2>0&&h2>0){camera3D.aspect=w2/h2;camera3D.updateProjectionMatrix();renderer3D.setSize(w2,h2);}
+  }).observe(container);
+}
+
+function updateCam3D(){
+  const dist=camera3D.position.length();
+  camera3D.position.set(
+    dist*Math.cos(rotX3D)*Math.sin(rotY3D),
+    Math.max(5,dist*Math.sin(rotX3D)+25),
+    dist*Math.cos(rotX3D)*Math.cos(rotY3D)
+  );
+  camera3D.lookAt(0,13,0);
+}
+
+function animate3D(){
+  anim3D=requestAnimationFrame(animate3D);
+  if(renderer3D&&scene3D&&camera3D) renderer3D.render(scene3D,camera3D);
+}
+
+function update3DMechanism(){
+  if(!mechGroup||!motions) return;
+  while(mechGroup.children.length) mechGroup.remove(mechGroup.children[0]);
+
+  const boxW=70,boxD=40,boxH=30,wall=2;
+  const shR=2.5,shLen=boxD-4;
+  const shZ=boxH*0.45;
+
+  // ── Box (transparent with edges) ──
+  const boxGeo=new THREE.BoxGeometry(boxW,boxH,boxD);
+  const boxMat=new THREE.MeshPhongMaterial({color:0x6B5E52,transparent:true,opacity:0.1,side:THREE.DoubleSide,depthWrite:false});
+  const box=new THREE.Mesh(boxGeo,boxMat);box.position.set(0,boxH/2,0);mechGroup.add(box);
+  const boxEdge=new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),new THREE.LineBasicMaterial({color:0x8A7A68,transparent:true,opacity:0.5}));
+  boxEdge.position.copy(box.position);mechGroup.add(boxEdge);
+
+  // ── Shaft ──
+  const shGeo=new THREE.CylinderGeometry(shR,shR,shLen,20);
+  const shMat=new THREE.MeshPhongMaterial({color:0x999999,shininess:80});
+  const sh=new THREE.Mesh(shGeo,shMat);sh.rotation.x=Math.PI/2;sh.position.set(0,shZ,0);mechGroup.add(sh);
+
+  // ── Bearings ──
+  [-shLen/2,shLen/2].forEach(z=>{
+    const bg=new THREE.CylinderGeometry(5,5,3,20);
+    const bm=new THREE.MeshPhongMaterial({color:0x6B5E52,shininess:20});
+    const b=new THREE.Mesh(bg,bm);b.rotation.x=Math.PI/2;b.position.set(0,shZ,z);mechGroup.add(b);
+    // Pillar
+    const pg=new THREE.BoxGeometry(3,shZ,3);
+    const p=new THREE.Mesh(pg,new THREE.MeshPhongMaterial({color:0x5A4E42}));
+    p.position.set(0,shZ/2,z);mechGroup.add(p);
+  });
+
+  // ── Cams ──
+  const nCams=motions.cam_count;
+  const camColors=[0xD4652A,0xC85A22,0xBC4F1C,0xA84518];
+  for(let ci=0;ci<Math.min(nCams,4);ci++){
+    const pieces=motions.motions.filter(m=>m.cam_index===ci);
+    const maxAmp=pieces.length>0?Math.max(...pieces.map(m=>m.amplitude)):20;
+    const prof=pieces.length>0?pieces[0].cam_profile:'smooth';
+    const mot=pieces.length>0?pieces[0].motion:'OSCILLATE';
+    let lift;
+    if(mot==='ROTATE') lift=3;
+    else if(mot==='TRANSLATE_V'||mot==='TRANSLATE_H') lift=maxAmp*0.4;
+    else lift=15*Math.sin(maxAmp*Math.PI/180);
+    lift=Math.max(2,Math.min(lift,8));
+
+    const camD={base_radius_mm:4,lift_mm:lift,profile:prof};
+    const zPos=(ci-(nCams-1)/2)*(shLen*0.6/Math.max(nCams-1,1));
+    const thick=4;
+
+    // Build cam shape
+    const shape=new THREE.Shape();
+    const segs=72;
+    for(let i=0;i<=segs;i++){
+      const a=(i/segs)*Math.PI*2;
+      const r=realCamRadiusSTL(a,camD);
+      const px=r*Math.cos(a),py=r*Math.sin(a);
+      i===0?shape.moveTo(px,py):shape.lineTo(px,py);
+    }
+    // Bore hole
+    const hole=new THREE.Path();
+    for(let i=0;i<=24;i++){
+      const a=(i/24)*Math.PI*2;
+      i===0?hole.moveTo(shR*Math.cos(a),shR*Math.sin(a)):hole.lineTo(shR*Math.cos(a),shR*Math.sin(a));
+    }
+    shape.holes.push(hole);
+
+    const camGeo=new THREE.ExtrudeGeometry(shape,{depth:thick,bevelEnabled:false});
+    const camMat=new THREE.MeshPhongMaterial({color:camColors[ci],shininess:30});
+    const camMesh=new THREE.Mesh(camGeo,camMat);
+    camMesh.rotation.x=Math.PI/2;
+    camMesh.position.set(0,shZ,zPos-thick/2);
+    mechGroup.add(camMesh);
+
+    // ── Follower ──
+    const maxR=4+lift;
+    const fLen=boxH-shZ-maxR+8;
+    const fGeo=new THREE.CylinderGeometry(1.5,1.5,fLen,8);
+    const fMat=new THREE.MeshPhongMaterial({color:0xC4A44A,shininess:50});
+    const f=new THREE.Mesh(fGeo,fMat);
+    f.position.set(0,shZ+maxR+fLen/2,zPos);mechGroup.add(f);
+
+    // T-bar platform
+    const tGeo=new THREE.BoxGeometry(16,1.5,3);
+    const t=new THREE.Mesh(tGeo,fMat);
+    t.position.set(0,shZ+maxR+fLen,zPos);mechGroup.add(t);
+  }
+
+  // ── Crank or Motor ──
+  if(drive===0){
+    const crankMat=new THREE.MeshPhongMaterial({color:0x556B8A,shininess:40});
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(1,1,14,8),crankMat);
+    arm.rotation.z=Math.PI/2;arm.position.set(7,shZ,-shLen/2-5);mechGroup.add(arm);
+    const ball=new THREE.Mesh(new THREE.SphereGeometry(3,12,12),crankMat);
+    ball.position.set(14,shZ,-shLen/2-5);mechGroup.add(ball);
+  } else {
+    const motorMat=new THREE.MeshPhongMaterial({color:0x4A4038});
+    const motor=new THREE.Mesh(new THREE.BoxGeometry(10,10,14),motorMat);
+    motor.position.set(0,shZ,shLen/2+10);mechGroup.add(motor);
+  }
 }
 
 window._explode=false;
