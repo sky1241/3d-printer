@@ -224,6 +224,7 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
     <div class="stat">Pièces <span class="v" id="statPieces">—</span></div>
     <div class="stat">Cames <span class="v" id="statCams">—</span></div>
     <div class="stat">Drive <span class="v-b" id="statDrive">Manivelle</span></div>
+    <div class="stat">Ratio <span class="v-b" id="statGear">1:1</span></div>
     <div class="stat" style="margin-left:auto">Zoom <span class="v mono" id="statZoom">×1.0</span></div>
   </div>
 </div>
@@ -299,6 +300,10 @@ input[type=range].blu::-webkit-slider-thumb{background:var(--blu);box-shadow:0 1
       <div class="slider-label"><span>Taille pièce</span><span class="val" id="valSize">100%</span></div>
       <input type="range" min="50" max="200" value="100" id="slSize" oninput="updateParam()">
     </div>
+    <div class="slider-row">
+      <div class="slider-label"><span>Ratio engrenage</span><span class="val-b" id="valGear">1:1</span></div>
+      <input type="range" class="blu" min="1" max="4" value="1" step="1" id="slGear" oninput="updateParam()">
+    </div>
   </div>
 
   <!-- Phase -->
@@ -364,6 +369,7 @@ loadThreeJS();
 let figurine = null;     // JSON from prompt 1
 let motions = null;      // JSON from prompt 2
 let drive = 0;           // 0=crank, 1=motor
+let gearRatio = 1;      // 1:1 to 1:4 reduction
 let selectedPiece = null;
 let currentStep = 1;
 let zoom = 1, panX = 0, panY = 0, rotAngle = 0, autoRotate = true;
@@ -1156,10 +1162,14 @@ function updateParam(){
   const amp=document.getElementById('slAmp').value;
   const spd=document.getElementById('slSpeed').value;
   const sz=document.getElementById('slSize').value;
+  const gr=document.getElementById('slGear').value;
   const speeds=[0.25,0.5,1,1.5,2,3];
   document.getElementById('valAmp').textContent=amp+'°';
   document.getElementById('valSpeed').textContent=speeds[spd-1]+' Hz';
   document.getElementById('valSize').textContent=sz+'%';
+  document.getElementById('valGear').textContent='1:'+gr;
+  gearRatio=+gr;
+  document.getElementById('statGear').textContent='1:'+gr;
   if(motions){
     const hzVal=speeds[spd-1];
     const spdName=hzVal<=0.5?'slow':hzVal<=1.5?'medium':'fast';
@@ -1377,26 +1387,17 @@ function animate(){
 
       const spd=m.speedHz||(m.speed==='slow'?0.5:m.speed==='fast'?2.5:1.0);
       const phase=(m.phase||0)*Math.PI/180;
-      const cycle=(t*0.3*spd*1.2+phase)%(Math.PI*2); // Hz-proportional speed
+      const camT=t*0.3*spd*1.2+phase;
 
-      // PROFILE — each one produces a COMPLETELY DIFFERENT wave shape
-      let wave;
-      if(m.cam_profile==='sharp'){
-        // TRIANGLE WAVE: linear up then linear down, fast transitions
-        const p=cycle/(Math.PI*2); // 0→1
-        wave=p<0.25? p*4 : p<0.75? 2-p*4 : p*4-4; // -1 to +1 triangle
-      } else if(m.cam_profile==='dwell'){
-        // SQUARE WAVE: snap up, hold, snap down, hold
-        const p=cycle/(Math.PI*2);
-        if(p<0.05) wave=p*20; // quick rise
-        else if(p<0.45) wave=1; // HOLD UP
-        else if(p<0.55) wave=1-(p-0.45)*20; // quick fall
-        else if(p<0.95) wave=-1; // HOLD DOWN 
-        else wave=-1+(p-0.95)*20; // quick rise back
-      } else {
-        // SMOOTH: gentle sine
-        wave=Math.sin(cycle);
-      }
+      // Use SAME cam profile as mechanism for perfect sync
+      const ci=m.cam_index||0;
+      const camRotOffset=ci*Math.PI*0.3;
+      const rot=camRotOffset+camT;
+      const angle=((rot+Math.PI*1.5)%(Math.PI*2)+Math.PI*2)%(Math.PI*2);
+      const profMap={smooth:'smooth',sharp:'sharp',dwell:'dwell'};
+      const camD={base_radius_mm:8,lift_mm:10,profile:profMap[m.cam_profile]||'smooth'};
+      const r=realCamRadiusSTL(angle,camD);
+      const wave=(r-camD.base_radius_mm)/camD.lift_mm*2-1; // normalize to -1→+1
 
       const amp=Math.max(m.amplitude||30, 20);
 
@@ -1407,7 +1408,7 @@ function animate(){
       } else if(m.motion==='OSCILLATE'){
         mesh.rotation.z=origR + wave*(amp*Math.PI/80); // very visible swing
       } else if(m.motion==='ROTATE'){
-        mesh.rotation.z=cycle;
+        mesh.rotation.z=camT%(Math.PI*2);
       }
     });
   }
@@ -1423,6 +1424,25 @@ function animate(){
       });
     }
     mechGroup.children.forEach(mesh=>{
+      // Crank spins at input speed (Hz * gearRatio)
+      if(mesh.userData.isCrank){
+        const avgHz=Object.values(camHz).length?Object.values(camHz).reduce((a,b)=>a+b)/Object.values(camHz).length:1;
+        const crankT=t*0.3*avgHz*gearRatio*1.2;
+        mesh.rotation.z=crankT;
+        return;
+      }
+      // Drive gear (small) = crank speed
+      if(mesh.userData.isDriveGear){
+        const avgHz=Object.values(camHz).length?Object.values(camHz).reduce((a,b)=>a+b)/Object.values(camHz).length:1;
+        mesh.rotation.z=t*0.3*avgHz*gearRatio*1.2;
+        return;
+      }
+      // Driven gear (big) = cam speed (counter-rotate)
+      if(mesh.userData.isDrivenGear){
+        const avgHz=Object.values(camHz).length?Object.values(camHz).reduce((a,b)=>a+b)/Object.values(camHz).length:1;
+        mesh.rotation.z=-t*0.3*avgHz*1.2;
+        return;
+      }
       const ci=mesh.userData.camIndex;
       if(ci===undefined&&!mesh.userData.isCam&&!mesh.userData.isFollower&&!mesh.userData.isTbar) return;
       const hz=camHz[ci]||1;
@@ -1685,16 +1705,63 @@ function buildMechanism3D(){
     mechGroup.add(sp);
   }
 
-  // Crank or motor
+  // Crank or motor + GEARS
+  const gearZ=-shLen/2-5;
   if(drive===0){
     const crankMat=new THREE.MeshPhongMaterial({color:0x556B8A,shininess:40});
     const arm=new THREE.Mesh(new THREE.CylinderGeometry(1,1,14,8),crankMat);
-    arm.rotation.z=Math.PI/2;arm.position.set(7,shZ,-shLen/2-5);mechGroup.add(arm);
+    arm.rotation.z=Math.PI/2;arm.position.set(7,shZ,gearZ);
+    arm.userData={isCrank:true};mechGroup.add(arm);
     const ball=new THREE.Mesh(new THREE.SphereGeometry(3,12,12),crankMat);
-    ball.position.set(14,shZ,-shLen/2-5);mechGroup.add(ball);
+    ball.position.set(14,shZ,gearZ);
+    ball.userData={isCrank:true};mechGroup.add(ball);
   } else {
     const motor=new THREE.Mesh(new THREE.BoxGeometry(10,10,14),new THREE.MeshPhongMaterial({color:0x4A4038}));
     motor.position.set(0,shZ,shLen/2+10);mechGroup.add(motor);
+  }
+
+  // Gear pair (visible only when ratio > 1)
+  if(gearRatio>1){
+    const gearMat1=new THREE.MeshPhongMaterial({color:0x7A8FA6,shininess:60,transparent:true,opacity:0.85});
+    const gearMat2=new THREE.MeshPhongMaterial({color:0x6A7F96,shininess:60,transparent:true,opacity:0.85});
+    const smallR=5,bigR=smallR*gearRatio;
+    const gearThick=3;
+
+    // Drive gear (small, on crank side)
+    const mkGear=(r,teeth)=>{
+      const sh=new THREE.Shape();
+      for(let i=0;i<=teeth*2;i++){
+        const a=(i/(teeth*2))*Math.PI*2;
+        const rr=i%2===0?r:r-1.5;
+        i===0?sh.moveTo(rr*Math.cos(a),rr*Math.sin(a)):sh.lineTo(rr*Math.cos(a),rr*Math.sin(a));
+      }
+      const hole=new THREE.Path();
+      for(let i=0;i<=16;i++){const a=(i/16)*Math.PI*2;i===0?hole.moveTo(shR*Math.cos(a),shR*Math.sin(a)):hole.lineTo(shR*Math.cos(a),shR*Math.sin(a));}
+      sh.holes.push(hole);
+      return new THREE.ExtrudeGeometry(sh,{depth:gearThick,bevelEnabled:false});
+    };
+
+    const smallTeeth=8,bigTeeth=smallTeeth*gearRatio;
+    const sg=mkGear(smallR,smallTeeth);sg.translate(0,0,-gearThick/2);
+    const smallGear=new THREE.Mesh(sg,gearMat1);
+    smallGear.position.set(0,shZ,gearZ);
+    smallGear.userData={isDriveGear:true};mechGroup.add(smallGear);
+
+    const bg=mkGear(bigR,bigTeeth);bg.translate(0,0,-gearThick/2);
+    const bigGear=new THREE.Mesh(bg,gearMat2);
+    bigGear.position.set(0,shZ,gearZ+gearThick+1);
+    bigGear.userData={isDrivenGear:true};mechGroup.add(bigGear);
+
+    // Gear ratio label
+    const gc=document.createElement('canvas');gc.width=128;gc.height=32;
+    const gctx=gc.getContext('2d');
+    gctx.fillStyle='rgba(0,0,0,0)';gctx.fillRect(0,0,128,32);
+    gctx.fillStyle='#7A8FA6';gctx.font='bold 12px sans-serif';gctx.textAlign='center';
+    gctx.fillText(`Ratio 1:${gearRatio}`,64,20);
+    const gtex=new THREE.CanvasTexture(gc);
+    const gsp=new THREE.Sprite(new THREE.SpriteMaterial({map:gtex,transparent:true}));
+    gsp.scale.set(16,4,1);gsp.position.set(0,shZ-10,gearZ);
+    mechGroup.add(gsp);
   }
 }
 
