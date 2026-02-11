@@ -244,7 +244,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 <div class="page" id="p3">
   <div class="hdr"><div class="hdr-icon">🔩</div><div class="hdr-txt"><h1>Automata Generator</h1></div></div>
   <div class="res-top"><span class="res-em" id="rE"></span><div class="res-info"><h2 id="rN"></h2><p id="rD"></p><div id="rDrive"></div></div></div>
-  <div class="cv-wrap"><canvas id="c3d"></canvas><div class="cv-tag rt" id="cTag"></div><div class="cv-tag lt">✓ FDM validé</div><div class="cv-tag tp mono">VUE TECHNIQUE</div><div class="zoom-ctrl" id="zoomCtrl" style="display:none"><button onclick="_zoomIn()">＋</button><button onclick="_zoomReset()">⟳</button><button onclick="_zoomOut()">－</button></div></div>
+  <div class="cv-wrap"><canvas id="c3d"></canvas><div class="cv-tag rt" id="cTag"></div><div class="cv-tag lt">✓ FDM validé</div><div class="cv-tag tp mono">VUE TECHNIQUE 3D</div><div class="zoom-ctrl" id="zoomCtrl" style="display:none"><button onclick="_zoomIn()">＋</button><button onclick="_zoomReset()">⟳</button><button onclick="_zoomOut()">－</button></div></div>
   <div class="stat-grid" id="sGrid"></div>
   <div class="tech-bar" id="techBox">
     <div class="tech-head" onclick="toggleTech()"><h3>⚙️ Sous le capot</h3><span class="arr">▸</span></div>
@@ -616,109 +616,219 @@ function render3D(p){
   const ctx=cv.getContext("2d");const w=cv.width,h=cv.height;let f=0;
   const presetId = p.id || "custom";
   let zoom=1.0, panX=0, panY=0;
-  let dragging=false, lastX=0, lastY=0;
-  let pinchDist=0;
+  let dragging=false, lastX=0, lastY=0, pinchDist=0;
+  let rotAngle=0, autoRotate=true;
 
   // Zoom controls
   const zc=$("zoomCtrl");if(zc)zc.style.display="flex";
   window._zoomIn=()=>{zoom=Math.min(zoom*1.25,4);};
   window._zoomOut=()=>{zoom=Math.max(zoom/1.25,0.5);};
-  window._zoomReset=()=>{zoom=1;panX=0;panY=0;};
+  window._zoomReset=()=>{zoom=1;panX=0;panY=0;autoRotate=true;};
 
-  // Touch/mouse pan
-  cv.onmousedown=(e)=>{dragging=true;lastX=e.clientX;lastY=e.clientY;};
-  cv.onmousemove=(e)=>{if(!dragging)return;panX+=(e.clientX-lastX)*dpr;panY+=(e.clientY-lastY)*dpr;lastX=e.clientX;lastY=e.clientY;};
+  // Mouse/touch for rotation + pan
+  cv.onmousedown=(e)=>{dragging=true;lastX=e.clientX;lastY=e.clientY;autoRotate=false;};
+  cv.onmousemove=(e)=>{if(!dragging)return;rotAngle+=(e.clientX-lastX)*0.01;panY+=(e.clientY-lastY)*dpr*0.5;lastX=e.clientX;lastY=e.clientY;};
   cv.onmouseup=cv.onmouseleave=()=>{dragging=false;};
   cv.onwheel=(e)=>{e.preventDefault();zoom*=e.deltaY>0?0.9:1.1;zoom=Math.max(0.5,Math.min(4,zoom));};
-  // Touch pinch zoom
-  cv.ontouchstart=(e)=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;pinchDist=Math.sqrt(dx*dx+dy*dy);}else if(e.touches.length===1){dragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}};
-  cv.ontouchmove=(e)=>{e.preventDefault();if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);if(pinchDist>0){zoom*=d/pinchDist;zoom=Math.max(0.5,Math.min(4,zoom));}pinchDist=d;}else if(e.touches.length===1&&dragging){panX+=(e.touches[0].clientX-lastX)*dpr;panY+=(e.touches[0].clientY-lastY)*dpr;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}};
+  cv.ontouchstart=(e)=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;pinchDist=Math.sqrt(dx*dx+dy*dy);}else if(e.touches.length===1){dragging=true;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;autoRotate=false;}};
+  cv.ontouchmove=(e)=>{e.preventDefault();if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);if(pinchDist>0){zoom*=d/pinchDist;zoom=Math.max(0.5,Math.min(4,zoom));}pinchDist=d;}else if(e.touches.length===1&&dragging){rotAngle+=(e.touches[0].clientX-lastX)*0.01;panY+=(e.touches[0].clientY-lastY)*dpr*0.5;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;}};
   cv.ontouchend=()=>{dragging=false;pinchDist=0;};
 
-  function draw(){
-    f++;ctx.clearRect(0,0,w,h);
-    // BG
-    ctx.fillStyle="#08080f";ctx.fillRect(0,0,w,h);
-    // Blueprint grid
-    ctx.save();
-    ctx.translate(w/2+panX,h/2+panY);
-    ctx.scale(zoom,zoom);
-    const sc=w/350;
-    const ox=0, oy=0;
+  // 3D projection with rotation
+  function proj(x,y,z){
+    const cr=Math.cos(rotAngle),sr=Math.sin(rotAngle);
+    const px=(x*cr-y*sr*0.55)*zoom;
+    const py=(-z*0.82+x*sr*0.32+y*cr*0.32)*zoom;
+    return[w/2+panX+px, h/2+panY+py];
+  }
 
-    // Grid lines (blueprint style)
-    ctx.strokeStyle="rgba(96,165,250,.06)";ctx.lineWidth=0.5*sc;
-    for(let i=-15;i<=15;i++){
-      ctx.beginPath();ctx.moveTo(i*12*sc,-180*sc);ctx.lineTo(i*12*sc,180*sc);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(-180*sc,i*12*sc);ctx.lineTo(180*sc,i*12*sc);ctx.stroke();
+  // Draw a 3D outlined shape given a color key and an array of 3D points
+  function drawPoly3D(points,ck,closed=true){
+    const c=PC[ck]||PC.body;
+    ctx.strokeStyle=c.s;ctx.fillStyle=c.f;ctx.lineWidth=1.8*zoom;
+    ctx.beginPath();
+    points.forEach((pt,i)=>{const[px,py]=proj(...pt);i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);});
+    if(closed)ctx.closePath();
+    ctx.fill();ctx.stroke();
+  }
+  function drawCircle3D(cx3,cy3,cz3,r,ck,nPts=32){
+    const c=PC[ck]||PC.body;
+    ctx.strokeStyle=c.s;ctx.fillStyle=c.f;ctx.lineWidth=1.8*zoom;
+    ctx.beginPath();
+    for(let i=0;i<=nPts;i++){
+      const a=(i/nPts)*Math.PI*2;
+      const[px,py]=proj(cx3+r*Math.cos(a),cy3+r*Math.sin(a),cz3);
+      i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
     }
-    // Axes
-    ctx.strokeStyle="rgba(96,165,250,.12)";ctx.lineWidth=1*sc;
-    ctx.beginPath();ctx.moveTo(-180*sc,0);ctx.lineTo(180*sc,0);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(0,-180*sc);ctx.lineTo(0,180*sc);ctx.stroke();
+    ctx.closePath();ctx.fill();ctx.stroke();
+  }
+  function drawRect3D(x,y,z,w3,h3,ck){
+    drawPoly3D([[x,y,z],[x+w3,y,z],[x+w3,y,z+h3],[x,y,z+h3]],ck);
+  }
+  function drawBox3D(x,y,z,wx,wy,wz,ck){
+    // 6 faces of a box, back faces first
+    const c=PC[ck]||PC.body;
+    const vs=[
+      [x,y,z],[x+wx,y,z],[x+wx,y+wy,z],[x,y+wy,z],
+      [x,y,z+wz],[x+wx,y,z+wz],[x+wx,y+wy,z+wz],[x,y+wy,z+wz]
+    ];
+    const faces=[[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7],[4,5,6,7],[0,3,2,1]];
+    // Sort by avg depth
+    const cr2=Math.cos(rotAngle),sr2=Math.sin(rotAngle);
+    faces.sort((a,b)=>{
+      const za=a.reduce((s,i)=>s+vs[i][0]*sr2+vs[i][1]*cr2,0)/4;
+      const zb=b.reduce((s,i)=>s+vs[i][0]*sr2+vs[i][1]*cr2,0)/4;
+      return za-zb;
+    });
+    faces.forEach(face=>{
+      ctx.strokeStyle=c.s;ctx.fillStyle=c.f;ctx.lineWidth=1.5*zoom;
+      ctx.beginPath();
+      face.forEach((vi,i)=>{const[px,py]=proj(...vs[vi]);i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);});
+      ctx.closePath();ctx.fill();ctx.stroke();
+    });
+  }
 
-    // Cam lift for animation
-    const camAngle=f*.02;
+  // Legend tracking
+  let legendItems=[];
+  function addLegend(name,ck){if(!legendItems.find(l=>l.k===ck))legendItems.push({n:name,k:ck});}
+
+  function draw(){
+    f++;
+    if(autoRotate)rotAngle=f*0.005;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle="#08080f";ctx.fillRect(0,0,w,h);
+    legendItems=[];
+
+    const sc=w/420;
+    const camAngle=f*0.018;
     const camLift=9*Math.sin(camAngle)+4*Math.sin(camAngle*1.3);
 
-    // Get pieces for this preset
+    // ── GRID (subtle) ──
+    ctx.globalAlpha=0.08;ctx.strokeStyle="#60a5fa";ctx.lineWidth=0.5;
+    for(let i=-6;i<=6;i++){
+      const[x1,y1]=proj(i*20,-120,0),[x2,y2]=proj(i*20,120,0);ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+      const[x3,y3]=proj(-120,i*20,0),[x4,y4]=proj(120,i*20,0);ctx.beginPath();ctx.moveTo(x3,y3);ctx.lineTo(x4,y4);ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+
+    const bw=50,bd=40,bh=45; // box dims
+
+    // ── CHASSIS (3D box) ──
+    addLegend("Châssis","chassis");
+    drawBox3D(-bw/2,-bd/2,0,bw,bd,bh,"chassis");
+
+    // ── SHAFT (cylinder as line) ──
+    addLegend("Arbre","shaft");
+    const shZ=bh*0.5;
+    const[sx1,sy1]=proj(0,-bd*0.9,shZ),[sx2,sy2]=proj(0,bd*0.9,shZ);
+    ctx.strokeStyle=PC.shaft.s;ctx.lineWidth=3*zoom;ctx.beginPath();ctx.moveTo(sx1,sy1);ctx.lineTo(sx2,sy2);ctx.stroke();
+    // Bearings
+    drawCircle3D(0,-bd*0.85,shZ,4,"shaft",16);
+    drawCircle3D(0,bd*0.85,shZ,4,"shaft",16);
+
+    // ── CAMS (proper cam profile in 3D) ──
+    addLegend("Came","cam");
+    const numCams=Math.min(p.c||1,4);
+    for(let ci=0;ci<numCams;ci++){
+      const ca=camAngle+ci*Math.PI*0.65;
+      const yOff=(ci-(numCams-1)/2)*(bd*0.5/Math.max(numCams-1,1));
+      const baseR=14-ci*1.5;
+      ctx.strokeStyle=PC.cam.s;ctx.fillStyle=PC.cam.f;ctx.lineWidth=2*zoom;
+      ctx.beginPath();
+      for(let i=0;i<=48;i++){
+        const t=(i/48)*Math.PI*2;
+        const r=baseR+5*Math.sin(t*2+ca)+2*Math.sin(t*3+ca*1.3);
+        const[px,py]=proj(r*Math.cos(t),yOff+r*Math.sin(t)*0.3,shZ);
+        i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+      }
+      ctx.closePath();ctx.fill();ctx.stroke();
+      // Center hole
+      drawCircle3D(0,yOff,shZ,2.5,"shaft",12);
+
+      // ── FOLLOWER ──
+      addLegend("Suiveur","follower");
+      const lift=5*Math.sin(ca)+2*Math.sin(ca*1.3);
+      const fTop=shZ+baseR+lift+12;
+      const[f1x,f1y]=proj(0,yOff,shZ+baseR+1);
+      const[f2x,f2y]=proj(0,yOff,fTop);
+      ctx.strokeStyle=PC.follower.s;ctx.lineWidth=2*zoom;
+      ctx.beginPath();ctx.moveTo(f1x,f1y);ctx.lineTo(f2x,f2y);ctx.stroke();
+      // Roller
+      drawCircle3D(0,yOff,shZ+baseR+1,3,"follower",12);
+    }
+
+    // ── DRIVE (motor or crank) ──
+    if(drive===1){
+      addLegend("Moteur","motor");
+      drawBox3D(bw/2+3,-bd/3,2,12,12,12,"motor");
+      // Belt line
+      const[m1x,m1y]=proj(bw/2+9,-bd/3+6,14);
+      const[m2x,m2y]=proj(bw/2+2,0,shZ);
+      ctx.strokeStyle="rgba(255,107,53,.2)";ctx.lineWidth=1*zoom;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(m1x,m1y);ctx.lineTo(m2x,m2y);ctx.stroke();ctx.setLineDash([]);
+    }else{
+      addLegend("Manivelle","crank");
+      const cA=camAngle;
+      const[hx,hy]=proj(0,-bd*0.9-6,shZ);
+      const armLen=14;
+      const[hex,hey]=proj(armLen*Math.cos(cA),-bd*0.9-6+armLen*Math.sin(cA)*0.3,shZ);
+      ctx.strokeStyle=PC.crank.s;ctx.lineWidth=2.5*zoom;
+      ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hex,hey);ctx.stroke();
+      drawCircle3D(0,-bd*0.9-6,shZ,4,"crank",12);
+      // Knob
+      const c2=PC.crank;ctx.fillStyle=c2.f;ctx.strokeStyle=c2.s;ctx.lineWidth=1.5*zoom;
+      ctx.beginPath();const[kx,ky]=proj(armLen*Math.cos(cA),-bd*0.9-6+armLen*Math.sin(cA)*0.3,shZ);
+      ctx.arc(kx,ky,3.5*zoom,0,Math.PI*2);ctx.fill();ctx.stroke();
+    }
+
+    // ── FIGURINE PIECES (3D positioned on top of mechanism) ──
+    const figZ=shZ+30+camLift*0.3; // on top of followers
     const pieceFn=PRESET_PIECES[presetId]||PRESET_PIECES["custom"];
     const pieces=pieceFn(f,camLift);
 
-    // Draw drive element
-    if(drive===0){
-      // Crank handle
-      const cA=f*.018;
-      const ck=PC.crank;
-      ctx.strokeStyle=ck.s;ctx.fillStyle=ck.f;ctx.lineWidth=2*sc;
-      ctx.beginPath();ctx.arc(ox-40*sc,oy+30*sc,5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
-      ctx.beginPath();ctx.moveTo(ox-40*sc,oy+30*sc);
-      const hx=ox-40*sc+14*sc*Math.cos(cA),hy=oy+30*sc+14*sc*Math.sin(cA);
-      ctx.lineTo(hx,hy);ctx.stroke();
-      ctx.beginPath();ctx.arc(hx,hy,3.5*sc,0,Math.PI*2);ctx.fill();ctx.stroke();
-    }else{
-      // Motor
-      const mk=PC.motor;
-      ctx.strokeStyle=mk.s;ctx.fillStyle=mk.f;ctx.lineWidth=2*sc;
-      ctx.beginPath();ctx.rect(ox+32*sc,oy+25*sc,14*sc,14*sc);ctx.fill();ctx.stroke();
-      ctx.fillStyle="rgba(255,107,53,.25)";ctx.font=`bold ${7*sc}px 'JetBrains Mono'`;ctx.textAlign="center";
-      ctx.fillText("M",ox+39*sc,oy+34*sc);
-    }
+    // Draw figurine pieces using a local 2D canvas projected into 3D space
+    // We use a hybrid: draw each piece centered at the figurine position in screen space
+    // but use the 3D position for overall placement
+    const[figSX,figSY]=proj(0,0,figZ);
+    const figScale=zoom*1.1;
 
-    // Draw each piece
     pieces.forEach(piece=>{
+      if(piece.k==="chassis"||piece.k==="shaft")return; // skip, already drawn in 3D
       const c=PC[piece.k]||PC.body;
-      ctx.strokeStyle=c.s;ctx.fillStyle=c.f;ctx.lineWidth=1.8*sc;
+      addLegend(piece.n,piece.k);
+      ctx.strokeStyle=c.s;ctx.fillStyle=c.f;ctx.lineWidth=1.8*figScale;
       ctx.save();
-      piece.d(ctx,ox,oy,sc);
+      ctx.translate(figSX,figSY-20*figScale);
+      ctx.scale(figScale,figScale);
+      piece.d(ctx,0,0,1);
       ctx.fill();ctx.stroke();
       ctx.restore();
     });
 
-    ctx.restore();
-
-    // ── LEGEND (top-left, outside transform) ──
-    const legendPieces=pieces;
-    const usedKeys=[];const seenKeys=new Set();
-    legendPieces.forEach(p=>{if(!seenKeys.has(p.k)){seenKeys.add(p.k);usedKeys.push({k:p.k,n:p.n});}});
-    const lx=12*dpr, ly=12*dpr, lh=14*dpr;
-    ctx.font=`${10*dpr}px 'JetBrains Mono',monospace`;ctx.textAlign="left";
-    // legend bg
-    const legendH=usedKeys.length*lh+8*dpr;
-    ctx.fillStyle="rgba(6,6,10,.8)";
-    ctx.fillRect(lx-4*dpr,ly-2*dpr,120*dpr,legendH);
-    usedKeys.forEach((item,i)=>{
+    // ── LEGEND ──
+    const lx=10*dpr, ly=10*dpr, lh=14*dpr;
+    ctx.font=`${9.5*dpr}px 'JetBrains Mono',monospace`;ctx.textAlign="left";
+    const legendH=legendItems.length*lh+8*dpr;
+    ctx.fillStyle="rgba(6,6,10,.85)";
+    ctx.fillRect(lx-4*dpr,ly-2*dpr,115*dpr,legendH);
+    legendItems.forEach((item,i)=>{
       const c=PC[item.k]||PC.body;
-      ctx.fillStyle=c.s;
-      ctx.fillRect(lx,ly+i*lh,8*dpr,8*dpr);
+      ctx.fillStyle=c.s;ctx.fillRect(lx,ly+i*lh,8*dpr,8*dpr);
       ctx.strokeStyle=c.s;ctx.lineWidth=1;ctx.strokeRect(lx,ly+i*lh,8*dpr,8*dpr);
-      ctx.fillStyle="rgba(255,255,255,.6)";
+      ctx.fillStyle="rgba(255,255,255,.55)";
       ctx.fillText(item.n,lx+12*dpr,ly+i*lh+7*dpr);
     });
 
     // Zoom indicator
-    ctx.fillStyle="rgba(255,255,255,.25)";ctx.font=`bold ${9*dpr}px 'JetBrains Mono'`;ctx.textAlign="right";
-    ctx.fillText(`×${zoom.toFixed(1)}`,w-12*dpr,h-10*dpr);
+    ctx.fillStyle="rgba(255,255,255,.2)";ctx.font=`bold ${8.5*dpr}px 'JetBrains Mono'`;ctx.textAlign="right";
+    ctx.fillText(`×${zoom.toFixed(1)}`,w-10*dpr,h-8*dpr);
+    // Drag hint
+    if(f<120){
+      ctx.globalAlpha=1-f/120;
+      ctx.fillStyle="rgba(255,255,255,.3)";ctx.font=`${8*dpr}px 'DM Sans'`;ctx.textAlign="center";
+      ctx.fillText("↔ glisse pour tourner",w/2,h-10*dpr);
+      ctx.globalAlpha=1;
+    }
 
     anim=requestAnimationFrame(draw)
   }
