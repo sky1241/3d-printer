@@ -870,11 +870,10 @@ function startRenderer(){
 
     // ── FIGURINE PIECES (assembled, true proportions in mm) ──
     const figBaseZ=bh+12;
-    const mmToPx=sc*1.6; // 1mm = this many pixels
+    const mmToPx=sc*1.4; // 1mm = this many pixels
     const explode=window._explode||false;
-    const explodeFactor=explode?1.8:0;
 
-    // Build position map: resolve parent→child chain
+    // Build position map using ABSOLUTE positions from JSON (already correct)
     const posMap={};
     function getShapeSize(s){
       if(s.type==='circle') return{w:s.r*2,h:s.r*2};
@@ -886,57 +885,14 @@ function startRenderer(){
       return{w:20,h:20};
     }
 
-    // First pass: compute assembled positions
-    // Root pieces at center, children offset from parent based on anchor
-    function resolvePos(piece){
-      if(posMap[piece.id]) return posMap[piece.id];
-      const sz=getShapeSize(piece.shape);
-
-      if(piece.parent==='root'){
-        posMap[piece.id]={x:0,y:0,sz};
-        return posMap[piece.id];
-      }
-
-      const parentPiece=figurine.pieces.find(p=>p.id===piece.parent);
-      if(!parentPiece){posMap[piece.id]={x:piece.position.x,y:piece.position.y,sz};return posMap[piece.id];}
-
-      const pp=resolvePos(parentPiece);
-      const psz=pp.sz;
-
-      // Anchor = where on the PARENT this child attaches
-      let ax=pp.x, ay=pp.y;
-      switch(piece.anchor){
-        case'top': ay=pp.y-psz.h/2; break;
-        case'bottom': ay=pp.y+psz.h/2; break;
-        case'left': ax=pp.x-psz.w/2; break;
-        case'right': ax=pp.x+psz.w/2; break;
-        case'center': default: break;
-      }
-
-      // Then offset from anchor by the child's own half-size to sit outside
-      let ox=0,oy=0;
-      switch(piece.anchor){
-        case'top': oy=-sz.h/2; break;
-        case'bottom': oy=sz.h/2; break;
-        case'left': ox=-sz.w/2; break;
-        case'right': ox=sz.w/2; break;
-      }
-
-      // Add relative position offset from JSON (fine-tuning)
-      const fineX=piece.position.x*0.15;
-      const fineY=piece.position.y*0.15;
-
-      const finalX=ax+ox+fineX;
-      const finalY=ay+oy+fineY;
-
-      // Explode: push pieces outward from center
-      const ex=explode?finalX*explodeFactor:0;
-      const ey=explode?finalY*explodeFactor:0;
-
-      posMap[piece.id]={x:finalX+ex,y:finalY+ey,sz};
-      return posMap[piece.id];
-    }
-    figurine.pieces.forEach(p=>resolvePos(p));
+    figurine.pieces.forEach(p=>{
+      const sz=getShapeSize(p.shape);
+      let fx=p.position.x;
+      let fy=p.position.y;
+      // Explode: push outward from center
+      if(explode){fx*=1.6;fy*=1.6;}
+      posMap[p.id]={x:fx,y:fy,sz};
+    });
 
     // Sort by layer for proper overlap
     const sortedPieces=[...figurine.pieces].sort((a,b)=>(a.layer||0)-(b.layer||0));
@@ -947,7 +903,7 @@ function startRenderer(){
       const isSel=p.id===selectedPiece;
       const pos=posMap[p.id];
 
-      // Convert mm position to 3D projection
+      // Convert mm to 3D space
       const px3d=pos.x*mmToPx/sc;
       const pz3d=figBaseZ - pos.y*mmToPx/sc;
 
@@ -968,7 +924,6 @@ function startRenderer(){
       }
 
       const[sx,sy]=proj(px3d+animOffX,0,pz3d+animOffZ);
-      const s=p.shape;
       const sz=pos.sz;
 
       // Real mm dimensions → pixel dimensions
@@ -989,49 +944,45 @@ function startRenderer(){
       if(totalRot) ctx.rotate(totalRot);
 
       ctx.beginPath();
-      if(s.type==='circle'){
+      if(sz.w<1&&sz.h<1){/* skip tiny */}
+      else if(p.shape.type==='circle'){
         ctx.arc(0,0,rw/2,0,Math.PI*2);
-      }else if(s.type==='ellipse'){
+      }else if(p.shape.type==='ellipse'){
         ctx.ellipse(0,0,rw/2,rh/2,0,0,Math.PI*2);
-      }else if(s.type==='rect'||s.type==='square'){
+      }else if(p.shape.type==='rect'||p.shape.type==='square'){
         ctx.roundRect(-rw/2,-rh/2,rw,rh,1.5);
-      }else if(s.type==='tri'){
+      }else if(p.shape.type==='tri'){
         ctx.moveTo(0,-rh/2);ctx.lineTo(rw/2,rh/2);ctx.lineTo(-rw/2,rh/2);
-      }else if(s.type==='diamond'){
+      }else if(p.shape.type==='diamond'){
         ctx.moveTo(0,-rh/2);ctx.lineTo(rw/2,0);ctx.lineTo(0,rh/2);ctx.lineTo(-rw/2,0);
       }
       ctx.closePath();ctx.fill();ctx.stroke();
       ctx.shadowBlur=0;
 
-      // Label (always show)
+      // Label
       ctx.fillStyle=c+'BB';
       ctx.font=`600 ${Math.max(7,9*zoom)}px 'DM Sans'`;
       ctx.textAlign='center';
       ctx.fillText(p.name,0,-rh/2-5);
 
-      // Movable indicator
       if(p.movable){
         ctx.fillStyle=c+'70';
         ctx.font=`${7*zoom}px 'JetBrains Mono'`;
         ctx.fillText('⚡',rw/2+5,3);
       }
 
+      ctx.restore();
+
       // Connection line to parent (when exploded)
       if(explode && p.parent!=='root'){
         const pp=posMap[p.parent];
         if(pp){
           const[ppx,ppy]=proj(pp.x*mmToPx/sc,0,figBaseZ-pp.y*mmToPx/sc);
-          ctx.restore();
-          ctx.save();
           ctx.strokeStyle=c+'30';ctx.lineWidth=0.8;ctx.setLineDash([3,3]);
           ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ppx,ppy);ctx.stroke();
           ctx.setLineDash([]);
-          ctx.restore();
-          return;
         }
       }
-
-      ctx.restore();
     });
 
     // ── LEGEND (bottom-left, compact) ──
