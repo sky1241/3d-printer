@@ -62,11 +62,9 @@
 
 ## ⚠ WARNINGS
 
-### CAM-W1 : Phase optimizer crash avec segments dict
-- **Lieu** : `optimize_phases()` → `estimate_cam_torque()` → `evaluate()`
-- **Bug** : `evaluate()` fait `seg.beta_deg` mais `MotionTrack.to_cam_segments()` retourne des dicts
-- **Impact** : Le pipeline MotionTrack → CamProfile crash
-- **Note** : compile_scene_to_cams() fonctionne car il convertit en CamSegment
+### ~~CAM-W1 : Phase optimizer crash avec segments dict~~ → FIXÉ ✅ (6295d82)
+- to_cam_segments() retourne maintenant des CamSegment objects
+- rise_return correctement splitté en rise+return avec betas préservés
 
 ### CE-W1 : 94 checks définis, seulement 21 tirent
 - 73 checks (78%) ne tirent sur aucun des 10 presets standard
@@ -77,8 +75,8 @@
 ### DOC-W3 : BOM dit "Steel rod" mais pas "shaft" ni "bearing"
 
 ### UI-W1 : Web UI stub — pas de preset selector, pas de 3D viewer, pas de download
-### UI-W2 : Flask POST /generate avec preset inconnu → 200 OK (devrait être 400)
-### UI-W3 : Flask POST /generate sans body → 200 OK (devrait être 400)
+### ~~UI-W2 : Flask POST /generate avec preset inconnu → 200 OK~~ → FIXÉ ✅ (cba4482)
+### ~~UI-W3 : Flask POST /generate sans body → 200 OK~~ → FIXÉ ✅ (cba4482)
 
 ### CODE-W1 : ~~4 fonctions dupliquées identiques~~ → FIXÉ ✅
 - Supprimé les secondes occurrences de `_pv_product`, `_cam_surface_speed_m_s`, `_natural_frequency_hz`, `_stress_from_cam_force`
@@ -88,8 +86,8 @@
 ## ℹ INFO
 
 ### INFO-1 : InverseSolver.from_canvas fonctionne (9s, 2 cames, RMS=11mm)
-### INFO-2 : Drummer eyes = 0.099mm³ (quasi-dégénérés, non imprimables)
-### INFO-3 : timing_data manque safety_margin et motor_stall_mNm
+### ~~INFO-2 : Drummer eyes = 0.099mm³~~ → FIXÉ ✅ (ea18b5b) — maintenant 1.25mm³
+### ~~INFO-3 : timing_data manque safety_margin et motor_stall_mNm~~ → FIXÉ ✅ (d6aef24)
 
 ---
 
