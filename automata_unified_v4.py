@@ -3094,7 +3094,8 @@ class ValidationResult:
     suggested_orientation: Tuple[float, float, float] = (0, 0, 0)
 
 
-def validate_mesh_fdm(mesh, part_name, profile=None, part_type="structural"):
+def validate_mesh_fdm(mesh, part_name, profile=None, part_type="structural",
+                      build_volume=(220, 220, 250)):
     """
     🟡 FIX-6: Wall thickness estimé par ray-casting au lieu du bounding box.
     """
@@ -3163,11 +3164,15 @@ def validate_mesh_fdm(mesh, part_name, profile=None, part_type="structural"):
     except Exception:
         result.min_wall_mm = round(float(np.min(mesh.bounds[1] - mesh.bounds[0])), 2)
 
-    # Size check
+    # Size check — per-axis against build volume
     dims = mesh.bounds[1] - mesh.bounds[0]
-    if np.max(dims) > 250:
-        result.errors.append(f"Dimension max {np.max(dims):.0f}mm > 250mm")
-        result.is_printable = False
+    # Sort dims descending to compare largest part dim vs largest bed dim, etc.
+    sorted_dims = sorted(dims, reverse=True)
+    sorted_vol = sorted(build_volume, reverse=True)
+    for d, v in zip(sorted_dims, sorted_vol):
+        if d > v:
+            result.errors.append(f"Dimension {d:.0f}mm > lit {v:.0f}mm")
+            result.is_printable = False
 
     # Part-type tips
     if part_type == "cam":
@@ -3951,11 +3956,22 @@ class AutomataScene:
 
     def validate(self):
         errors = []
+        if not self.tracks:
+            errors.append("Aucun track défini — l'automate n'aura pas de mouvement.")
         for track in self.tracks:
             total = track.total_beta
             target = 360.0 / track.frequency_multiplier  # FIX-10: respect freq_mult
             if abs(total - target) > 5.0 and total > 0:
                 errors.append(f"Track '{track.name}': beta={total:.1f}° (≠{target:.0f}°)")
+            for p in track.primitives:
+                if p.amplitude < 0:
+                    errors.append(f"Track '{track.name}': amplitude={p.amplitude}° négative — utiliser valeur positive.")
+                if p.amplitude == 0:
+                    errors.append(f"Track '{track.name}': amplitude=0° — came sans mouvement.")
+        if self.cycle_rpm > 30:
+            errors.append(f"RPM={self.cycle_rpm} très élevé — un automate dépasse rarement 10 RPM.")
+        if self.cycle_rpm <= 0:
+            errors.append(f"RPM={self.cycle_rpm} invalide — doit être > 0.")
         link_names = {l.name for l in self.links}
         for j in self.joints:
             if j.parent_link != "base" and j.parent_link not in link_names:
