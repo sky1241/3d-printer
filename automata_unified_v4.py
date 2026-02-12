@@ -1742,7 +1742,13 @@ def generate_chassis_box(config, cam_count=1, follower_guides=None):
     bore_local_z = cz - config.plate_thickness  # bore position in wall's local frame
     parts["wall_left"] = create_bearing_wall(config, "left", [(0, bore_local_z)])
     parts["wall_right"] = create_bearing_wall(config, "right", [(0, bore_local_z)])
-    parts["camshaft_bracket"] = create_camshaft_bracket(config, z_position=cz-7.5)
+    # Position bracket above motor mount to avoid collision
+    if config.drive_mode != 'crank':
+        motor_top_z = config.plate_thickness + 2 + config.motor_length
+        bracket_z = max(cz - 7.5, motor_top_z + 1.0)
+    else:
+        bracket_z = cz - 7.5
+    parts["camshaft_bracket"] = create_camshaft_bracket(config, z_position=bracket_z)
     _make_shaft_and_drive(config, cam_count, cz, parts)
     _add_follower_guides(parts, follower_guides, config)
     return parts
