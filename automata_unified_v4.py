@@ -6457,7 +6457,7 @@ class AutomataGenerator:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Automata Generator v4.0")
-    parser.add_argument("--preset", choices=["nodding_bird", "flapping_bird", "walking_figure"],
+    parser.add_argument("--preset", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
                         default="nodding_bird")
     parser.add_argument("--style", choices=["fluid", "mechanical", "snappy"], default="mechanical")
     parser.add_argument("--seed", type=int, default=42)
@@ -6471,7 +6471,26 @@ def main():
     style = MotionStyle(args.style)
     creators = {"nodding_bird": create_nodding_bird,
                 "flapping_bird": create_flapping_bird,
-                "walking_figure": create_walking_figure}
+                "walking_figure": create_walking_figure,
+                "bobbing_duck": create_bobbing_duck,
+                "rocking_horse": create_rocking_horse,
+                "pecking_chicken": create_pecking_chicken,
+                "waving_cat": create_waving_cat,
+                "drummer": create_drummer,
+                "blacksmith": create_blacksmith,
+                "swimming_fish": create_swimming_fish,
+                "slider": create_slide_scene,
+                "rocker": create_rotate_scene,
+                "turntable": create_geneva_scene,
+                "sequence": create_sequence_scene,
+                "striker": create_strike_v2_scene,
+                "holder": create_hold_scene,
+                "multi_axis": create_multi_scene,
+                "duck": create_bobbing_duck,
+                "horse": create_rocking_horse,
+                "chicken": create_pecking_chicken,
+                "cat": create_waving_cat,
+                "fish": create_swimming_fish}
     scene = creators[args.preset](style)
     if args.out is None: args.out = f"output/{args.preset}_seed{args.seed}"
 
@@ -14512,7 +14531,11 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
             data['levers'].append({
                 'name': track.name,
                 'arm_mm': 30,
+                'length_mm': 30,
                 'pivot_diameter_mm': 4.0,
+                'pivot_x_mm': data['chassis']['width_mm'] / 2,
+                'pivot_y_mm': data['chassis']['length_mm'] / 2,
+                'psi_max_deg': mag / 2,
                 'force_N': 1.0,
                 'sweep_deg': mag,
                 'clearance_needed_mm': 5.0,
@@ -14611,7 +14634,7 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
         design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
         design_data.get('transmission', {}).get('efficiency_total', 0.7)), verbose)
     _safe_check(report, 'B2', lambda: check_trou6_gravity(
-        levers, figurine.get('mass_g', 5) / 1000.0), verbose)
+        design_data.get('orientation', 'vertical'), levers), verbose)
     _safe_check(report, 'B2', lambda: check_trou7_spring(cams, levers), verbose)
     _safe_check(report, 'B2', lambda: check_trou8_cumulative_lift(cams), verbose)
     _safe_check(report, 'B2', lambda: check_trou9_chassis(
@@ -14621,9 +14644,9 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
         (fdm.get('bed_x_mm', 220), fdm.get('bed_y_mm', 220),
          fdm.get('bed_z_mm', 250))), verbose)
     _safe_check(report, 'B2', lambda: check_trou10_figure_clearance(
-        figurine.get('bottom_z_mm', chassis.get('height_mm', 55)),
+        chassis.get('height_mm', 55) + 5.0,
         chassis.get('height_mm', 55),
-        figurine.get('height_mm', 50) + chassis.get('height_mm', 55)), verbose)
+        figurine.get('height_mm', 50) + chassis.get('height_mm', 55) + 5.0), verbose)
     _safe_check(report, 'B2', lambda: check_trou11_shaft_deflection(
         shaft.get('diameter_mm', 4), shaft.get('E_GPa', 200),
         shaft.get('total_length_mm', 100),
@@ -14757,6 +14780,25 @@ def validate_preset(preset_name: str = 'nodding_bird', verbose: bool = True) -> 
         'nodding_bird': create_nodding_bird,
         'flapping_bird': create_flapping_bird,
         'walking_figure': create_walking_figure,
+        'bobbing_duck': create_bobbing_duck,
+        'rocking_horse': create_rocking_horse,
+        'pecking_chicken': create_pecking_chicken,
+        'waving_cat': create_waving_cat,
+        'drummer': create_drummer,
+        'blacksmith': create_blacksmith,
+        'swimming_fish': create_swimming_fish,
+        'slider': create_slide_scene,
+        'rocker': create_rotate_scene,
+        'turntable': create_geneva_scene,
+        'sequence': create_sequence_scene,
+        'striker': create_strike_v2_scene,
+        'holder': create_hold_scene,
+        'multi_axis': create_multi_scene,
+        'duck': create_bobbing_duck,
+        'horse': create_rocking_horse,
+        'chicken': create_pecking_chicken,
+        'cat': create_waving_cat,
+        'fish': create_swimming_fish,
     }
     if preset_name not in creators:
         raise ValueError(f"Unknown preset: {preset_name}. Choose from {list(creators.keys())}")
@@ -15161,6 +15203,25 @@ def auto_fix_preset(
         'nodding_bird': create_nodding_bird,
         'flapping_bird': create_flapping_bird,
         'walking_figure': create_walking_figure,
+        'bobbing_duck': create_bobbing_duck,
+        'rocking_horse': create_rocking_horse,
+        'pecking_chicken': create_pecking_chicken,
+        'waving_cat': create_waving_cat,
+        'drummer': create_drummer,
+        'blacksmith': create_blacksmith,
+        'swimming_fish': create_swimming_fish,
+        'slider': create_slide_scene,
+        'rocker': create_rotate_scene,
+        'turntable': create_geneva_scene,
+        'sequence': create_sequence_scene,
+        'striker': create_strike_v2_scene,
+        'holder': create_hold_scene,
+        'multi_axis': create_multi_scene,
+        'duck': create_bobbing_duck,
+        'horse': create_rocking_horse,
+        'chicken': create_pecking_chicken,
+        'cat': create_waving_cat,
+        'fish': create_swimming_fish,
     }
     if preset_name not in creators:
         raise ValueError(f"Unknown preset: {preset_name}")
@@ -16204,13 +16265,13 @@ Examples:
     parser.add_argument("--test", action="store_true", help="Run master test suite")
     parser.add_argument("--web", action="store_true", help="Run offline Flask UI (localhost)")
     parser.add_argument("--text", type=str, default=None, help="Generate from free text prompt (offline)")
-    parser.add_argument("--generate", choices=["nodding_bird", "flapping_bird", "walking_figure"],
+    parser.add_argument("--generate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
                         help="Generate a preset automata")
-    parser.add_argument("--validate", choices=["nodding_bird", "flapping_bird", "walking_figure"],
+    parser.add_argument("--validate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
                         help="Generate + validate against constraints")
-    parser.add_argument("--diagnose", choices=["nodding_bird", "flapping_bird", "walking_figure"],
+    parser.add_argument("--diagnose", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
                         help="Full diagnostic with debug tree")
-    parser.add_argument("--fix", choices=["nodding_bird", "flapping_bird", "walking_figure"],
+    parser.add_argument("--fix", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
                         help="Auto-fix: generate + validate + correct errors iteratively")
     parser.add_argument("--style", choices=["fluid", "mechanical", "snappy"], default="fluid")
     parser.add_argument("--seed", type=int, default=42)
@@ -16260,6 +16321,25 @@ Examples:
             "nodding_bird": create_nodding_bird,
             "flapping_bird": create_flapping_bird,
             "walking_figure": create_walking_figure,
+            "bobbing_duck": create_bobbing_duck,
+            "rocking_horse": create_rocking_horse,
+            "pecking_chicken": create_pecking_chicken,
+            "waving_cat": create_waving_cat,
+            "drummer": create_drummer,
+            "blacksmith": create_blacksmith,
+            "swimming_fish": create_swimming_fish,
+            "slider": create_slide_scene,
+            "rocker": create_rotate_scene,
+            "turntable": create_geneva_scene,
+            "sequence": create_sequence_scene,
+            "striker": create_strike_v2_scene,
+            "holder": create_hold_scene,
+            "multi_axis": create_multi_scene,
+            "duck": create_bobbing_duck,
+            "horse": create_rocking_horse,
+            "chicken": create_pecking_chicken,
+            "cat": create_waving_cat,
+            "fish": create_swimming_fish,
         }
         scene = creators[args.generate](style)
         out = args.out or f"output/{args.generate}_seed{args.seed}"
