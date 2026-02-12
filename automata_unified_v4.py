@@ -7766,16 +7766,48 @@ class AutomataGenerator:
             lever_mesh = self.all_parts[lever_name]
             lever_tip = lever_mesh.bounds[1].copy()  # output tip (top)
             
-            # Find nearest figurine part (excluding eyes, small cosmetic parts)
-            best_dist, best_name = 100.0, None  # 100mm max search radius
-            for fig_name, fig_mesh in self.all_parts.items():
-                if not fig_name.startswith('fig_'): continue
-                if any(x in fig_name for x in ('eye', 'pupil', 'beak')): continue
-                if fig_mesh.volume < 10: continue  # skip tiny parts
-                dist = np.linalg.norm(fig_mesh.centroid - lever_tip)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_name = fig_name
+            # Find best figurine part to connect to.
+            # Priority: (1) name match (lever_neck → fig_neck/fig_head),
+            #           (2) nearest non-structural fig part (skip legs/feet)
+            cam_part_name = lever_name.replace('lever_', '')
+            best_dist, best_name = 100.0, None
+            
+            # Pass 1: try name-based match (e.g. lever_neck → fig_neck or fig_head)
+            name_candidates = [
+                f'fig_{cam_part_name}',           # exact: lever_neck → fig_neck
+                f'fig_{cam_part_name}_left',
+                f'fig_{cam_part_name}_right',
+            ]
+            # Also try semantic matches
+            if 'shoulder' in cam_part_name or 'hip' in cam_part_name:
+                side = 'right' if 'right' in cam_part_name else 'left'
+                if 'shoulder' in cam_part_name:
+                    name_candidates.extend([f'fig_arm_{side}', f'fig_wing_{side}', f'fig_hand_{side}'])
+                else:
+                    name_candidates.extend([f'fig_leg_{side}', f'fig_thigh_{side}', f'fig_foot_{side}'])
+            if 'tail' in cam_part_name:
+                name_candidates.extend(['fig_tail', 'fig_tail_upper', 'fig_tail_lower'])
+            
+            for nc in name_candidates:
+                if nc in self.all_parts:
+                    fm = self.all_parts[nc]
+                    if fm.volume > 5:
+                        best_name = nc
+                        break
+            
+            # Pass 2: fallback to nearest, but skip static structural parts
+            if best_name is None:
+                skip_parts = ('eye', 'pupil', 'beak', 'foot')
+                for fig_name, fig_mesh in self.all_parts.items():
+                    if not fig_name.startswith('fig_'): continue
+                    if any(x in fig_name for x in skip_parts): continue
+                    # Skip legs only if they're clearly structural (small volume, at chassis level)
+                    if 'leg' in fig_name and fig_mesh.volume < 200: continue
+                    if fig_mesh.volume < 10: continue
+                    dist = np.linalg.norm(fig_mesh.centroid - lever_tip)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_name = fig_name
             
             if best_name is None:
                 continue
@@ -7815,13 +7847,14 @@ class AutomataGenerator:
             self.all_parts[f"pushrod_{lever_name.replace('lever_','')}"] = pushrod
             pushrod_count += 1
             
-            # Socket in figurine: subtract Ø3.3mm hole at pushrod entry point
-            # Place socket at fig centroid XY, starting from fig bottom going up
-            socket_x, socket_y = fig_centroid_xy
-            socket_z = fig_bottom[2] + SOCKET_DEPTH / 2
+            # Socket in figurine: subtract vertical Ø3.3mm hole at fig bottom center
+            # Socket is always vertical (Z-axis) for clean FDM printing and reliable fit.
+            # The pushrod enters from below; a vertical hole is easier to print than angled.
+            socket_depth = min(SOCKET_DEPTH, fig_mesh.extents[2] * 0.5)  # max 50% of fig height
+            socket_center_z = fig_bottom[2] + socket_depth / 2
             socket = trimesh.creation.cylinder(
-                radius=SOCKET_RADIUS, height=SOCKET_DEPTH + 1, sections=16)
-            socket.apply_translation([socket_x, socket_y, socket_z])
+                radius=SOCKET_RADIUS, height=socket_depth + 0.5, sections=16)
+            socket.apply_translation([fig_centroid_xy[0], fig_centroid_xy[1], socket_center_z])
             
             try:
                 fig_with_socket = fig_mesh.difference(socket)
