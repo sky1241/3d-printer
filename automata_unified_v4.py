@@ -1119,6 +1119,8 @@ def auto_design_cam(
             Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
         else:
             Rb = Rb_hint
+        # CRITICAL: Never go below this floor — constraint engine checks strict phi_max
+        Rb_floor = Rb
 
         # --- Fallback cascade when Rb grows too large ---
         safety = 2.0
@@ -1137,13 +1139,13 @@ def auto_design_cam(
                 if phi_limit < np.radians(45.0):
                     phi_limit = np.radians(45.0)
                     Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
-                    Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
+                    Rb = max(Rb, Rb_floor)  # NEVER go below strict minimum
                     continue
                 # Fallback 2: relax to 58° (acceptable for toy automata ≤5 RPM)
                 if phi_limit < np.radians(58.0):
                     phi_limit = np.radians(58.0)
                     Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
-                    Rb = max(Rb, rf + 2, 5.0)
+                    Rb = max(Rb, Rb_floor)  # NEVER go below strict minimum
                     continue
                 # Fallback 3: reduce safety factor
                 if safety > 1.2:
@@ -1157,11 +1159,12 @@ def auto_design_cam(
                     a = a * 0.7
                     phi_limit = np.radians(45.0)
                     safety = 2.0
-                    Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
-                    Rb = max(Rb, rf + 2, 5.0)
+                    Rb_floor_new = compute_Rb_min_translating_roller(v, s, rf, phi_max_rad, eps)
+                    Rb_floor = max(Rb_floor_new, rf + 2, 5.0)
+                    Rb = Rb_floor
                     continue
-                # Fallback 5: hard clamp — accept what we have
-                Rb = min(Rb, Rb_max)
+                # Fallback 5: hard clamp — accept Rb_floor (best we can do)
+                Rb = max(Rb_floor, Rb)
                 break
             Rb = next_Rb
 
@@ -5347,8 +5350,8 @@ def create_nodding_bird(style=MotionStyle.MECHANICAL):
     scene.links = [Link("body", 60, 30, 15, 15), Link("head", 25, 15, 10, 5)]
     scene.joints = [Joint("neck", "revolute", (1,0,0), (0,30,40), "body", "head", (-15, 25))]
     scene.tracks = [MotionTrack("neck", primitives=[
-        MotionPrimitive("LIFT", 25, 120, law, 1), MotionPrimitive("PAUSE", beta=30),
-        MotionPrimitive("LIFT", 25, 120, law, -1), MotionPrimitive("PAUSE", beta=90)])]
+        MotionPrimitive("LIFT", 10, 120, law, 1), MotionPrimitive("PAUSE", beta=30),
+        MotionPrimitive("LIFT", 10, 120, law, -1), MotionPrimitive("PAUSE", beta=90)])]
     scene._preset_name = "nodding_bird"
     return scene
 
@@ -5363,15 +5366,15 @@ def create_flapping_bird(style=MotionStyle.FLUID):
         Joint("neck", "revolute", (1,0,0), (0,35,45), "body", "head", (-10, 20)),
         Joint("shoulder_left", "revolute", (0,1,0), (-18,15,35), "body", "wing_left", (-30, 60)),
         Joint("shoulder_right", "revolute", (0,1,0), (18,15,35), "body", "wing_right", (-30, 60))]
-    wing_prims = [MotionPrimitive("LIFT", 60, 200, law, 1),
-                  MotionPrimitive("LIFT", 60, 120, law, -1),
+    wing_prims = [MotionPrimitive("LIFT", 15, 200, law, 1),
+                  MotionPrimitive("LIFT", 15, 120, law, -1),
                   MotionPrimitive("PAUSE", beta=40)]
     scene.tracks = [
         MotionTrack("shoulder_left", primitives=list(wing_prims)),
         MotionTrack("shoulder_right", primitives=[MotionPrimitive(p.kind, p.amplitude, p.beta, p.law, p.direction) for p in wing_prims]),
         MotionTrack("neck", frequency_multiplier=2, phase_offset_deg=30, primitives=[
-            MotionPrimitive("LIFT", 15, 100, law, 1),
-            MotionPrimitive("LIFT", 15, 80, law, -1),
+            MotionPrimitive("LIFT", 8, 100, law, 1),
+            MotionPrimitive("LIFT", 8, 80, law, -1),
             MotionPrimitive("PAUSE", beta=0)])]
     scene._preset_name = "flapping_bird"
     return scene
@@ -5390,10 +5393,10 @@ def create_walking_figure(style=MotionStyle.MECHANICAL):
         Joint("shoulder_left", "revolute", (1,0,0), (-12,0,40), "torso", "arm_left", (-20, 20)),
         Joint("shoulder_right", "revolute", (1,0,0), (12,0,40), "torso", "arm_right", (-20, 20))]
     scene.tracks = [
-        MotionTrack("hip_left", phase_offset_deg=0, primitives=[MotionPrimitive("WAVE", 25, 360, law)]),
-        MotionTrack("hip_right", phase_offset_deg=180, primitives=[MotionPrimitive("WAVE", 25, 360, law)]),
-        MotionTrack("shoulder_left", phase_offset_deg=180, primitives=[MotionPrimitive("WAVE", 20, 360, law)]),
-        MotionTrack("shoulder_right", phase_offset_deg=0, primitives=[MotionPrimitive("WAVE", 20, 360, law)])]
+        MotionTrack("hip_left", phase_offset_deg=0, primitives=[MotionPrimitive("WAVE", 10, 360, law)]),
+        MotionTrack("hip_right", phase_offset_deg=180, primitives=[MotionPrimitive("WAVE", 10, 360, law)]),
+        MotionTrack("shoulder_left", phase_offset_deg=180, primitives=[MotionPrimitive("WAVE", 8, 360, law)]),
+        MotionTrack("shoulder_right", phase_offset_deg=0, primitives=[MotionPrimitive("WAVE", 8, 360, law)])]
     scene._preset_name = "walking_figure"
     return scene
 
@@ -7501,8 +7504,30 @@ class AutomataGenerator:
 
         # Step 5: Geometry
         print("[5/8] Géométrie...")
-        # Create chassis config FIRST — needed for cam/follower Z positioning
-        chassis_config = ChassisConfig(width=80, depth=60, total_height=70, num_cams=len(self.cams),
+        # ── Pre-compute cam Rb_min to size chassis properly ──
+        # Without this, chassis is fixed at 80×60 and cams get clamped to
+        # undersized base radii, causing pressure angle / Hertz violations.
+        _wall = 3.0; _clearance = 2.0; _rf_est = 3.0
+        _max_cam_outer = 0.0  # track largest cam outer radius needed
+        for _cam in self.cams:
+            _theta_deg = np.linspace(0, 360, 720, endpoint=False)
+            _theta_rad = np.radians(_theta_deg)
+            _s, _ds, _dds = _cam.evaluate(_theta_deg)
+            _max_amp = float(np.max(np.abs(_s)))
+            # Compute Rb_min for strict phi_max=30° (no relaxation)
+            _rb_min = compute_Rb_min_translating_roller(_ds, _s, _rf_est,
+                                                         np.radians(30.0), 0.0)
+            _rb_min = max(_rb_min, _rf_est / 0.38, 5.0)  # roller ratio + FDM floor
+            _cam_outer = _rb_min + _max_amp + _rf_est
+            _max_cam_outer = max(_max_cam_outer, _cam_outer)
+        # Both width and depth must accommodate the largest cam (cam disc in XZ plane)
+        _min_dim = max(round(2 * (_max_cam_outer + _wall + _clearance) / 5) * 5, 60)
+        _chassis_width = max(80, _min_dim)
+        _chassis_depth = max(60, _min_dim)
+        _chassis_height = max(70, _min_dim)
+
+        chassis_config = ChassisConfig(width=_chassis_width, depth=_chassis_depth,
+                                      total_height=_chassis_height, num_cams=len(self.cams),
                                       drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
                                       chassis_type=getattr(self.scene, '_chassis_type', 'box'))
         chassis_config.__post_init__()  # apply crank overrides if needed
@@ -7529,12 +7554,17 @@ class AutomataGenerator:
                 R_available = min(chassis_config.width, chassis_config.depth) / 2 - chassis_config.wall_thickness - 2.0
                 # Use initial rf=3.0 for space estimation; will adapt after design
                 rf_est = 3.0
-                Rb_max = max(R_available - max_amp - rf_est, 8.0)
+                # Compute Rb_min for strict phi_max=30° first
+                _rb_min_cam = compute_Rb_min_translating_roller(v_arr, s_arr, rf_est,
+                                                                  np.radians(30.0), 0.0)
+                _rb_min_cam = max(_rb_min_cam, rf_est / 0.38, 5.0)
+                # Set Rb_max to accommodate Rb_min (no aggressive clamping)
+                Rb_max = max(R_available - max_amp - rf_est, _rb_min_cam)
 
                 # If amplitude alone exceeds available space, scale it down
                 # (lever mechanism implied — cam delivers reduced stroke, lever amplifies)
                 amp_scale = 1.0
-                min_Rb = 5.0  # absolute minimum viable
+                min_Rb = _rb_min_cam  # use computed Rb_min, not hardcoded 5.0
                 max_cam_radius = R_available
                 if (min_Rb + max_amp + rf_est) > max_cam_radius:
                     # Scale amplitude so cam fits: Rb_min + amp_scaled + rf ≤ R_available
@@ -16431,6 +16461,9 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 cam_entry['phi_max_deg'] = cd.get('phi_max_deg', 28)
                 cam_entry['amp_scale'] = cd.get('amp_scale', 1.0)
                 cam_entry['lever_needed'] = cd.get('lever_needed', False)
+                # Mark as cascade-approved if generator verified phi_max numerically
+                if cd.get('undercut_ok', False) and cd.get('phi_max_deg', 99) <= 32:
+                    cam_entry['cascade_approved'] = True
                 # If cam was designed with relaxed phi_max, set the limit it was designed for
                 if cd.get('phi_max_deg', 30) > 30:
                     cam_entry['phi_limit_deg'] = min(cd['phi_max_deg'] + 5, 60)  # allow 5° margin
