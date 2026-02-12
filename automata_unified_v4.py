@@ -1589,6 +1589,33 @@ def create_base_plate(config):
     return trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
 
 
+def create_lever_arm(pivot_pos, input_length, output_length,
+                     arm_width=5.0, arm_thickness=3.0, pivot_bore_d=3.5):
+    """Create a lever arm mesh for cam→figurine motion amplification.
+    
+    Vertical flat bar pivoting at pivot_pos.
+    Input arm goes DOWN (toward cam follower), output arm goes UP (toward figurine).
+    """
+    total_length = input_length + output_length
+    arm_2d = shapely_box(-arm_thickness/2, -input_length, arm_thickness/2, output_length)
+    bore = Point(0, 0).buffer(pivot_bore_d/2, resolution=16)
+    arm_2d = arm_2d.difference(bore)
+    # Rounded ends
+    tip_in = Point(0, -input_length).buffer(arm_thickness/2, resolution=8)
+    tip_out = Point(0, output_length).buffer(arm_thickness/2, resolution=8)
+    arm_2d = arm_2d.union(tip_in).union(tip_out).difference(bore)
+    if not arm_2d.is_valid:
+        arm_2d = arm_2d.buffer(0)
+    
+    # Extrude in Y then position at pivot
+    R = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+    T = trimesh.transformations.translation_matrix(pivot_pos)
+    M = trimesh.transformations.concatenate_matrices(T, R)
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(arm_2d), arm_width, transform=M)
+    mesh.metadata['lever_type'] = 'simple_bar'
+    return mesh
+
+
 def create_bearing_wall(config, side="left", bearing_positions=None):
     h, d, t = config.total_height, config.depth, config.wall_thickness
     wall = shapely_box(0, 0, t, h)
@@ -3517,6 +3544,9 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('camshaft', 'cam_'), ('camshaft', 'collar_'),
         ('wall_', 'camshaft_bracket'), ('base_plate', 'wall_'),
         ('base_plate', 'motor_mount'), ('follower_guide_', 'fig_'),
+        ('lever_', 'cam_'), ('lever_', 'follower_guide_'),  # lever rides on cam
+        ('lever_', 'camshaft'),  # lever pivot near shaft
+        ('lever_', 'fig_'),  # lever output pushes figurine
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -6582,6 +6612,46 @@ class AutomataGenerator:
         self.all_parts = {}
         self.all_parts.update(self.chassis_parts)
         self.all_parts.update(self.cam_meshes)
+
+        # Generate lever arms for cams that need motion amplification
+        lever_count = 0
+        for cam_idx, cam in enumerate(self.cams):
+            cd = self._cam_designs.get(cam.name, {})
+            if cd.get('lever_needed', False):
+                amp_scale = cd.get('amp_scale', 1.0)
+                lever_ratio = 1.0 / amp_scale if amp_scale > 0 else 1.0
+                if lever_ratio <= 1.05:
+                    continue  # No amplification needed
+                
+                # Position: above the cam, at the cam's Y position
+                cam_mesh = self.cam_meshes.get(f"cam_{cam.name}")
+                if cam_mesh is None or len(cam_mesh.faces) < 4:
+                    continue
+                
+                cam_bounds = cam_mesh.bounds
+                cam_y = (cam_bounds[0][1] + cam_bounds[1][1]) / 2
+                cam_top_z = cam_bounds[1][2]
+                cam_r = max(cam_bounds[1][0] - cam_bounds[0][0],
+                            cam_bounds[1][1] - cam_bounds[0][1]) / 2
+                
+                # Lever geometry
+                input_arm = 12.0   # mm from pivot to follower contact
+                output_arm = input_arm * lever_ratio
+                pivot_z = cam_top_z + input_arm + 3  # 3mm gap above cam
+                pivot_pos = [0, cam_y, pivot_z]
+                
+                lever_mesh = create_lever_arm(
+                    pivot_pos, input_arm, output_arm,
+                    arm_width=4.0, arm_thickness=3.0,
+                    pivot_bore_d=chassis_config.camshaft_diameter + 0.5)
+                
+                self.all_parts[f"lever_{cam.name}"] = lever_mesh
+                lever_count += 1
+                cd['lever_pivot_z'] = pivot_z
+                cd['lever_output_z'] = pivot_z + output_arm
+        
+        if lever_count > 0:
+            print(f"  · Leviers: {lever_count} bras de levier générés")
 
 
         # Figurine (hardcoded preset OR parametric config)
