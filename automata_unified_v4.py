@@ -7751,6 +7751,70 @@ class AutomataGenerator:
                     self.all_parts[f"fig_{fname}"] = fmesh
                 print(f"  · Figurine: {len(fig_parts)} pièces")
 
+        # ── Step 5a-bis: Pushrod connections (lever → figurine) ──
+        # Each lever output tip gets a pushrod (Ø3mm rod) bridging to the nearest
+        # figurine part. A Ø3.3mm socket is subtracted from the fig part.
+        # This is the standard automata mechanism: cam→lever→pushrod→figurine.
+        pushrod_count = 0
+        PUSHROD_RADIUS = 1.5       # Ø3mm rod
+        SOCKET_RADIUS = 1.65       # Ø3.3mm hole (0.3mm clearance total)
+        SOCKET_DEPTH = 5.0         # 5mm deep socket in figurine
+        for lever_name in list(self.all_parts.keys()):
+            if not lever_name.startswith('lever_'): continue
+            if any(x in lever_name for x in ('bracket', 'pin', 'collar')): continue
+            
+            lever_mesh = self.all_parts[lever_name]
+            lever_tip = lever_mesh.bounds[1].copy()  # output tip (top)
+            
+            # Find nearest figurine part (excluding eyes, small cosmetic parts)
+            best_dist, best_name = 100.0, None  # 100mm max search radius
+            for fig_name, fig_mesh in self.all_parts.items():
+                if not fig_name.startswith('fig_'): continue
+                if any(x in fig_name for x in ('eye', 'pupil', 'beak')): continue
+                if fig_mesh.volume < 10: continue  # skip tiny parts
+                dist = np.linalg.norm(fig_mesh.centroid - lever_tip)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_name = fig_name
+            
+            if best_name is None:
+                continue
+            
+            fig_mesh = self.all_parts[best_name]
+            fig_bottom = fig_mesh.bounds[0].copy()
+            fig_centroid_xy = fig_mesh.centroid[:2]
+            
+            # Pushrod: vertical rod from lever tip up to figurine bottom
+            # XY at lever tip, extends from lever_tip_z to fig_bottom_z
+            rod_start_z = lever_tip[2]
+            rod_end_z = fig_bottom[2]
+            rod_length = max(rod_end_z - rod_start_z, 3.0)  # minimum 3mm
+            rod_center_z = rod_start_z + rod_length / 2
+            
+            pushrod = trimesh.creation.cylinder(
+                radius=PUSHROD_RADIUS, height=rod_length, sections=12)
+            pushrod.apply_translation([lever_tip[0], lever_tip[1], rod_center_z])
+            pushrod.metadata['part_type'] = 'pushrod'
+            pushrod.metadata['connects'] = f"{lever_name} → {best_name}"
+            self.all_parts[f"pushrod_{lever_name.replace('lever_','')}"] = pushrod
+            pushrod_count += 1
+            
+            # Socket in figurine: subtract Ø3.3mm hole at pushrod entry point
+            socket_z = fig_bottom[2] + SOCKET_DEPTH / 2
+            socket = trimesh.creation.cylinder(
+                radius=SOCKET_RADIUS, height=SOCKET_DEPTH + 1, sections=16)
+            socket.apply_translation([lever_tip[0], lever_tip[1], socket_z])
+            
+            try:
+                fig_with_socket = fig_mesh.difference(socket)
+                if fig_with_socket is not None and fig_with_socket.is_volume and fig_with_socket.volume > 5:
+                    self.all_parts[best_name] = fig_with_socket
+            except Exception:
+                pass  # boolean may fail — socket stays as metadata only
+        
+        if pushrod_count > 0:
+            print(f"  · Pushrods: {pushrod_count} tiges de liaison levier→figurine")
+
         total_faces = sum(len(m.faces) for m in self.all_parts.values())
         print(f"  → Total: {len(self.all_parts)} pièces, {total_faces} faces")
 
