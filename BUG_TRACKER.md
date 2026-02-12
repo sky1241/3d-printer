@@ -105,7 +105,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ├─────────────────────────────────┼──────────────────┤
 │ test_master --test              │ ✅ ALL PASS      │
 │ 94 check_* fonctions définies   │ ✅ 94 trouvées   │
-│ checks branchés sur réel        │ 26/94 (28%)      │
+│ checks branchés sur réel        │ 37/94 (39%)      │
 │ checks dans run_all_constraints │ 48/94 (51%)      │
 │ dead code (jamais appelé)       │ 46/94 (49%)      │
 │ validate_assembly (Step 8)      │ ✅ 9/9 presets   │
@@ -127,6 +127,10 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 │ Bearing PV                      │ ✅ 9/9 presets   │
 │ Thermal PLA                     │ ✅ 9/9 presets   │
 │ Assembly DFA                    │ ✅ 9/9 presets   │
+│ Creep + Fatigue + Resonance     │ ✅ 9/9 presets   │
+│ Tolerance + Shrinkage           │ ✅ 9/9 presets   │
+│ Electrical + Noise              │ ✅ 9/9 presets   │
+│ Integration + Documentation     │ ✅ 9/9 presets   │
 └─────────────────────────────────┴──────────────────┘
 ```
 
@@ -135,7 +139,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ```
 9/9 presets : 0 erreurs, 0 assembly violations
 188 parts total, 13 leviers
-26/94 checks branchés sur données réelles
-~20 warnings (design, pas bugs)
+37/94 checks branchés sur données réelles (39%)
+~30 warnings (design, pas bugs)
 ALL PASS ✅
 ```
