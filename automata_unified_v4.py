@@ -3262,7 +3262,6 @@ def run_real_constraint_checks(gen, chassis_config):
     Returns list of Violation objects from the constraint engine."""
     violations = []
     cam_thickness = 5.0
-    rf = 3.0  # roller follower radius
 
     # ── CAM GEOMETRY CHECKS ──
 
@@ -3298,7 +3297,7 @@ def run_real_constraint_checks(gen, chassis_config):
             'follower_type': 'translating_roller',
             'phi_max_deg': cd.get('phi_max_deg', 30),
             'rho_min_mm': cd.get('Rb_mm', 10),
-            'roller_radius_mm': rf,
+            'roller_radius_mm': cd.get('rf_mm', 3.0),
             'phi_limit_deg': phi_limit,
         })
     violations.extend(check_trou3_pressure_angle(trou3_data))
@@ -3323,7 +3322,7 @@ def run_real_constraint_checks(gen, chassis_config):
         trou33_data.append({
             'name': cam.name,
             'Rb_mm': cd.get('Rb_mm', 10),
-            'roller_radius_mm': rf,
+            'roller_radius_mm': cd.get('rf_mm', 3.0),
         })
     violations.extend(check_trou33_roller_sizing(trou33_data))
 
@@ -3381,7 +3380,7 @@ def run_real_constraint_checks(gen, chassis_config):
             'amplitude_mm': max_amp,
             'beta_deg': max_beta,
             'motion_law': law,
-            'roller_radius_mm': rf,
+            'roller_radius_mm': cd.get('rf_mm', 3.0),
             'offset_mm': 0.0,
         })
     if trou29_data:
@@ -6410,30 +6409,48 @@ class AutomataGenerator:
                 # Total cam radius ≈ Rb + max(s) + rf, must fit in min(width,depth)/2
                 max_amp = float(np.max(np.abs(s_arr)))
                 R_available = min(chassis_config.width, chassis_config.depth) / 2 - chassis_config.wall_thickness - 2.0
-                Rb_max = max(R_available - max_amp - 3.0, 8.0)  # rf=3.0, min Rb=8mm
+                # Use initial rf=3.0 for space estimation; will adapt after design
+                rf_est = 3.0
+                Rb_max = max(R_available - max_amp - rf_est, 8.0)
 
                 # If amplitude alone exceeds available space, scale it down
                 # (lever mechanism implied — cam delivers reduced stroke, lever amplifies)
                 amp_scale = 1.0
-                min_Rb = 5.0  # absolute minimum viable (rf + 2)
+                min_Rb = 5.0  # absolute minimum viable
                 max_cam_radius = R_available
-                if (min_Rb + max_amp + 3.0) > max_cam_radius:
+                if (min_Rb + max_amp + rf_est) > max_cam_radius:
                     # Scale amplitude so cam fits: Rb_min + amp_scaled + rf ≤ R_available
-                    max_amp_allowed = max_cam_radius - min_Rb - 3.0
+                    max_amp_allowed = max_cam_radius - min_Rb - rf_est
                     if max_amp_allowed > 0 and max_amp > 0:
                         amp_scale = max_amp_allowed / max_amp
                         s_arr = s_arr * amp_scale
                         v_arr = v_arr * amp_scale
                         a_arr = a_arr * amp_scale
                         max_amp = float(np.max(np.abs(s_arr)))
-                        Rb_max = max(R_available - max_amp - 3.0, min_Rb)
+                        Rb_max = max(R_available - max_amp - rf_est, min_Rb)
                         print(f"  ⚠ cam_{cam.name}: amplitude scaled ×{amp_scale:.2f} (lever ratio 1:{1/amp_scale:.1f} needed)")
 
+                # Adaptive roller radius: rf/Rb must be ≤ 0.4 to avoid undercut
+                rf = 3.0
+                if Rb_max < rf / 0.38:
+                    rf = max(round(0.38 * Rb_max, 1), 2.0)  # min 2mm for FDM printability
+
                 design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
-                                          follower_type="roller", rf=3.0,
+                                          follower_type="roller", rf=rf,
                                           Rb_hint=rb_hint,
                                           phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0,
                                           Rb_max=Rb_max)
+
+                # Post-check: if actual Rb makes rf/Rb > 0.4, redo with smaller rf
+                if design.Rb > 0 and rf / design.Rb > 0.4:
+                    rf_new = max(round(0.38 * design.Rb, 1), 2.0)
+                    if rf_new < rf:
+                        rf = rf_new
+                        design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
+                                                  follower_type="roller", rf=rf,
+                                                  Rb_hint=rb_hint,
+                                                  phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0,
+                                                  Rb_max=Rb_max)
                 mesh = design.mesh
                 # Don't position yet — collect all cams first, then space dynamically
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
@@ -6442,6 +6459,7 @@ class AutomataGenerator:
                     self._cam_designs = {}
                 self._cam_designs[cam.name] = {
                     'Rb_mm': design.Rb,
+                    'rf_mm': rf,
                     'phi_max_deg': design.phi_max_deg,
                     'undercut_ok': design.undercut_ok,
                     'amp_scale': amp_scale,
