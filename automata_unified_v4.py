@@ -1595,15 +1595,23 @@ def create_lever_arm(pivot_pos, input_length, output_length,
     
     Vertical flat bar pivoting at pivot_pos.
     Input arm goes DOWN (toward cam follower), output arm goes UP (toward figurine).
+    A circular hub at the pivot ensures ≥1.5mm wall around the bore.
     """
     total_length = input_length + output_length
     arm_2d = shapely_box(-arm_thickness/2, -input_length, arm_thickness/2, output_length)
-    bore = Point(0, 0).buffer(pivot_bore_d/2, resolution=16)
-    arm_2d = arm_2d.difference(bore)
+    # Hub/boss at pivot: ensures bore never severs the arm
+    # Min wall = 1.5mm (≥3 perimeters × 0.4mm nozzle) around bore
+    min_wall = 1.5
+    hub_r = pivot_bore_d / 2 + min_wall
+    hub = Point(0, 0).buffer(hub_r, resolution=24)
+    arm_2d = arm_2d.union(hub)
     # Rounded ends
     tip_in = Point(0, -input_length).buffer(arm_thickness/2, resolution=8)
     tip_out = Point(0, output_length).buffer(arm_thickness/2, resolution=8)
-    arm_2d = arm_2d.union(tip_in).union(tip_out).difference(bore)
+    arm_2d = arm_2d.union(tip_in).union(tip_out)
+    # Now subtract the bore — hub guarantees single connected body
+    bore = Point(0, 0).buffer(pivot_bore_d/2, resolution=16)
+    arm_2d = arm_2d.difference(bore)
     if not arm_2d.is_valid:
         arm_2d = arm_2d.buffer(0)
     
