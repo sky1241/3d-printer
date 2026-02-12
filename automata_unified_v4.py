@@ -14481,6 +14481,8 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 'roller_radius_mm': 5,
                 'thickness_mm': 5,
                 'z_offset_mm': i * 12,
+                'z_min_mm': i * 12,
+                'z_max_mm': i * 12 + 5,
                 'phase_deg': cam_obj.phase_offset_deg,
                 'law': law,
                 'phi_max_deg': 28,
@@ -14546,6 +14548,8 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 'volume_mm3': abs(pmesh.volume) if hasattr(pmesh, 'volume') else 0,
                 'is_watertight': pmesh.is_watertight if hasattr(pmesh, 'is_watertight') else True,
                 'infill_pct': 100 if ptype == 'gear' else 40 if ptype == 'structural' else 15,
+                'quantity': 1,
+                'category': 'printed',
             })
         data['assembly']['num_parts'] = len(gen_result['parts'])
         data['assembly']['step_count'] = len(gen_result['parts']) + 2
@@ -14575,7 +14579,7 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
         result = gen.generate()
         data = extract_design_data(scene, result)
         report = run_all_constraints(data)
-        report.print_summary()
+        print(report.summary())
     """
     report = ConstraintReport()
     
@@ -14596,29 +14600,40 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
     # ── B2: TROU 1-12 ──
     _safe_check(report, 'B2', lambda: check_trou1_cam_collision(cams), verbose)
     _safe_check(report, 'B2', lambda: check_trou2_shaft_length(
-        cams, shaft.get('total_length_mm', 100),
-        fdm.get('bed_x_mm', 220)), verbose)
+        cams, chassis.get('width_mm', 60)), verbose)
     _safe_check(report, 'B2', lambda: check_trou3_pressure_angle(cams), verbose)
     _safe_check(report, 'B2', lambda: check_trou4_lever_sweep(
-        levers, chassis.get('width_mm', 60)), verbose)
+        levers, {"width": chassis.get('width_mm', 60),
+                 "depth": chassis.get('length_mm', 100)}), verbose)
     _safe_check(report, 'B2', lambda: check_trou5_torque_with_lever(
         timing.get('peak_torque_mNm', 0) / 1000.0,
-        motor.get('stall_torque_mNm', 167) / 1000.0), verbose)
+        MotorSpec(),
+        design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
+        design_data.get('transmission', {}).get('efficiency_total', 0.7)), verbose)
     _safe_check(report, 'B2', lambda: check_trou6_gravity(
         levers, figurine.get('mass_g', 5) / 1000.0), verbose)
     _safe_check(report, 'B2', lambda: check_trou7_spring(cams, levers), verbose)
     _safe_check(report, 'B2', lambda: check_trou8_cumulative_lift(cams), verbose)
     _safe_check(report, 'B2', lambda: check_trou9_chassis(
-        chassis.get('length_mm', 100), chassis.get('width_mm', 60),
-        chassis.get('height_mm', 55), chassis.get('wall_thickness_mm', 3),
-        fdm.get('bed_x_mm', 220), fdm.get('bed_y_mm', 220)), verbose)
+        {"width": chassis.get('width_mm', 60),
+         "depth": chassis.get('length_mm', 100),
+         "height": chassis.get('height_mm', 55)},
+        (fdm.get('bed_x_mm', 220), fdm.get('bed_y_mm', 220),
+         fdm.get('bed_z_mm', 250))), verbose)
     _safe_check(report, 'B2', lambda: check_trou10_figure_clearance(
-        figurine.get('height_mm', 50), chassis.get('height_mm', 55)), verbose)
+        figurine.get('bottom_z_mm', chassis.get('height_mm', 55)),
+        chassis.get('height_mm', 55),
+        figurine.get('height_mm', 50) + chassis.get('height_mm', 55)), verbose)
     _safe_check(report, 'B2', lambda: check_trou11_shaft_deflection(
-        shaft.get('diameter_mm', 4), shaft.get('total_length_mm', 100),
-        shaft.get('loads', []), shaft.get('E_GPa', 200)), verbose)
+        shaft.get('diameter_mm', 4), shaft.get('E_GPa', 200),
+        shaft.get('total_length_mm', 100),
+        shaft.get('loads', [])), verbose)
     _safe_check(report, 'B2', lambda: check_trou12_transmission(
-        design_data.get('transmission', {})), verbose)
+        MotorSpec(),
+        timing.get('rpm', 2),
+        design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
+        design_data.get('transmission', {}).get('type', 'spur'),
+        design_data.get('transmission', {}).get('n_stages', 1)), verbose)
     
     # ── B5: TROU 28-35 ──
     _safe_check(report, 'B5', lambda: check_trou28_motion_law_suitability(
@@ -14644,34 +14659,51 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
     worm_gears = design_data.get('worm_gears', [])
     _safe_check(report, 'B6', lambda: check_trou41_worm_gear(worm_gears), verbose)
     _safe_check(report, 'B6', lambda: check_trou42_gear_efficiency(
-        design_data.get('transmission', {})), verbose)
+        design_data.get('transmission', {}).get('stages', []),
+        MotorSpec()), verbose)
     genevas = design_data.get('genevas', [])
     _safe_check(report, 'B6', lambda: check_trou43_geneva_timing(genevas), verbose)
     
     # ── B7: TROU 44-51 ──
     _safe_check(report, 'B7', lambda: check_trou44_thermal(
-        parts, timing.get('rpm', 2)), verbose)
+        design_data.get('environment', {})), verbose)
     _safe_check(report, 'B7', lambda: check_trou45_creep(parts), verbose)
     _safe_check(report, 'B7', lambda: check_trou46_resonance(
-        parts, timing.get('rpm', 2)), verbose)
+        timing.get('rpm', 2), parts), verbose)
     _safe_check(report, 'B7', lambda: check_trou47_fatigue(
         parts, timing.get('rpm', 2)), verbose)
     _safe_check(report, 'B7', lambda: check_trou48_tolerance_stackup(parts), verbose)
     _safe_check(report, 'B7', lambda: check_trou49_shrinkage(parts), verbose)
     _safe_check(report, 'B7', lambda: check_trou50_bearing(parts), verbose)
     _safe_check(report, 'B7', lambda: check_trou51_degradation(
-        parts, timing.get('rpm', 2)), verbose)
+        design_data.get('environment', {}), design_data), verbose)
     
     # ── B8: TROU 52-59 ──
     _safe_check(report, 'B8', lambda: check_trou52_en71_safety(parts), verbose)
     _safe_check(report, 'B8', lambda: check_trou53_electrical(motor), verbose)
     _safe_check(report, 'B8', lambda: check_trou54_noise(
-        parts, timing.get('rpm', 2)), verbose)
-    _safe_check(report, 'B8', lambda: check_trou55_assembly(assembly), verbose)
-    _safe_check(report, 'B8', lambda: check_trou56_bom(parts), verbose)
+        timing.get('rpm', 2),
+        len(gears),
+        len(cams),
+        design_data.get('transmission', {}).get('type', '') == 'worm',
+        chassis.get('enclosed', False)), verbose)
+    _safe_check(report, 'B8', lambda: check_trou55_assembly(parts), verbose)
+    _safe_check(report, 'B8', lambda: check_trou56_bom(
+        parts, design_data), verbose)
     _safe_check(report, 'B8', lambda: check_trou57_print_plate(
         parts, fdm.get('bed_x_mm', 220), fdm.get('bed_y_mm', 220)), verbose)
-    _safe_check(report, 'B8', lambda: check_trou58_integration(design_data), verbose)
+    # Build block_results for integration check from report violations
+    _block_results = {'B2': [], 'B5': [], 'B6': [], 'B7': [], 'B8': [], 'B9': []}
+    for v in report.violations:
+        t = getattr(v, 'trou', 0)
+        if 1 <= t <= 12: _block_results['B2'].append(v)
+        elif 28 <= t <= 35: _block_results['B5'].append(v)
+        elif 36 <= t <= 43: _block_results['B6'].append(v)
+        elif 44 <= t <= 51: _block_results['B7'].append(v)
+        elif 52 <= t <= 59: _block_results['B8'].append(v)
+        elif 60 <= t <= 72: _block_results['B9'].append(v)
+        else: _block_results.setdefault('other', []).append(v)
+    _safe_check(report, 'B8', lambda: check_trou58_integration(_block_results), verbose)
     _safe_check(report, 'B8', lambda: check_trou59_documentation(assembly), verbose)
     
     # ── B9: TROU 60-72 ──
@@ -14689,7 +14721,7 @@ def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintR
             g.get('target_hours', 100)), verbose)
     
     if verbose:
-        report.print_summary()
+        print(report.summary())
     
     return report
 
