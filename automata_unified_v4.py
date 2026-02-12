@@ -2526,8 +2526,9 @@ def make_snap_hook_3d(platform_width: float,
 
 
 def make_snap_pocket_3d(cfg: 'JointConfig' = None) -> trimesh.Trimesh:
-    """Create a snap-fit pocket to subtract from figurine base.
+    """UNUSED — kept for reference. Pushrod+socket system replaces snap-fit.
     
+    Create a snap-fit pocket to subtract from figurine base.
     Returns a mesh to SUBTRACT from the figurine base.
     Creates a rectangular slot with clearance for the hook.
     """
@@ -7664,8 +7665,12 @@ class AutomataGenerator:
             if cd.get('lever_needed', False):
                 amp_scale = cd.get('amp_scale', 1.0)
                 lever_ratio = 1.0 / amp_scale if amp_scale > 0 else 1.0
-                if lever_ratio <= 1.05:
-                    continue  # No amplification needed
+                # A lever is needed for TWO reasons:
+                # 1. Amplitude amplification (amp_scale < 1.0 → ratio > 1.0)
+                # 2. Pressure angle reduction (phi_max > 32°)
+                # Even with ratio ≈ 1.0, the lever acts as a hinged follower
+                # that reduces cam pressure angle and provides a pushrod attach point.
+                lever_ratio = max(lever_ratio, 1.2)  # minimum 1:1.2 for useful output
                 
                 # Position: above the cam, at the cam's Y position
                 cam_mesh = self.cam_meshes.get(f"cam_{cam.name}")
