@@ -5938,7 +5938,9 @@ def create_flask_app() -> 'Flask':
 
     @app.post('/generate')
     def generate_zip():
-        prompt = request.form.get('prompt', '')
+        prompt = request.form.get('prompt', '').strip()
+        if not prompt:
+            return '<h2>Erreur</h2><p>Veuillez décrire votre automate.</p><p><a href="/">Retour</a></p>', 400
         cfg = parse_text_to_figurine_config(prompt)
         scene = SceneBuilder.from_figurine(cfg)
 
