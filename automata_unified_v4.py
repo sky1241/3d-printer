@@ -7784,26 +7784,44 @@ class AutomataGenerator:
             fig_bottom = fig_mesh.bounds[0].copy()
             fig_centroid_xy = fig_mesh.centroid[:2]
             
-            # Pushrod: vertical rod from lever tip up to figurine bottom
-            # XY at lever tip, extends from lever_tip_z to fig_bottom_z
-            rod_start_z = lever_tip[2]
-            rod_end_z = fig_bottom[2]
-            rod_length = max(rod_end_z - rod_start_z, 3.0)  # minimum 3mm
-            rod_center_z = rod_start_z + rod_length / 2
+            # Pushrod: angled rod from lever output tip to figurine bottom center
+            # Start: lever tip (XY from lever, Z = lever top)
+            # End: figurine centroid XY at figurine bottom Z
+            start_pt = np.array([lever_tip[0], lever_tip[1], lever_tip[2]])
+            end_pt = np.array([fig_centroid_xy[0], fig_centroid_xy[1], fig_bottom[2]])
+            rod_vec = end_pt - start_pt
+            rod_length = max(np.linalg.norm(rod_vec), 3.0)
+            rod_center = (start_pt + end_pt) / 2
             
+            # Create cylinder along Z, then rotate to align with rod_vec
             pushrod = trimesh.creation.cylinder(
                 radius=PUSHROD_RADIUS, height=rod_length, sections=12)
-            pushrod.apply_translation([lever_tip[0], lever_tip[1], rod_center_z])
+            # Rotation from Z-axis to rod_vec direction
+            rod_dir = rod_vec / np.linalg.norm(rod_vec)
+            z_axis = np.array([0, 0, 1.0])
+            cross = np.cross(z_axis, rod_dir)
+            cross_norm = np.linalg.norm(cross)
+            if cross_norm > 1e-6:
+                angle = np.arcsin(np.clip(cross_norm, -1, 1))
+                if np.dot(z_axis, rod_dir) < 0:
+                    angle = np.pi - angle
+                rot = trimesh.transformations.rotation_matrix(angle, cross / cross_norm)
+                pushrod.apply_transform(rot)
+            elif np.dot(z_axis, rod_dir) < 0:
+                pushrod.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
+            pushrod.apply_translation(rod_center)
             pushrod.metadata['part_type'] = 'pushrod'
             pushrod.metadata['connects'] = f"{lever_name} → {best_name}"
             self.all_parts[f"pushrod_{lever_name.replace('lever_','')}"] = pushrod
             pushrod_count += 1
             
             # Socket in figurine: subtract Ø3.3mm hole at pushrod entry point
+            # Place socket at fig centroid XY, starting from fig bottom going up
+            socket_x, socket_y = fig_centroid_xy
             socket_z = fig_bottom[2] + SOCKET_DEPTH / 2
             socket = trimesh.creation.cylinder(
                 radius=SOCKET_RADIUS, height=SOCKET_DEPTH + 1, sections=16)
-            socket.apply_translation([lever_tip[0], lever_tip[1], socket_z])
+            socket.apply_translation([socket_x, socket_y, socket_z])
             
             try:
                 fig_with_socket = fig_mesh.difference(socket)
