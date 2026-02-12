@@ -6167,7 +6167,7 @@ class AutomataGenerator:
                                           phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0,
                                           Rb_max=Rb_max)
                 mesh = design.mesh
-                mesh.apply_translation([0, i*8.0, cz - cam_thickness/2])
+                # Don't position yet — collect all cams first, then space dynamically
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
                 # Store actual Rb for constraint engine
                 if not hasattr(self, '_cam_designs'):
@@ -6184,8 +6184,59 @@ class AutomataGenerator:
             except Exception as e:
                 print(f"  ⚠ cam_{cam.name}: fallback ({e})")
                 mesh = create_cam_disk_placeholder(cam)
-                mesh.apply_translation([0, i*8.0, cz - cam_thickness/2])
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
+
+        # ── Dynamic cam Y spacing based on actual radii ──
+        cam_names_ordered = [f"cam_{cam.name}" for cam in self.cams]
+        cam_half_widths = []
+        for cn in cam_names_ordered:
+            m = self.cam_meshes.get(cn)
+            if m is not None and len(m.faces) > 0:
+                # Half-width in Y (cam is centered at Y=0 before translation)
+                b = m.bounds
+                cam_half_widths.append(max(abs(b[0][1]), abs(b[1][1])))
+            else:
+                cam_half_widths.append(4.0)  # fallback
+
+        cam_gap = 2.0  # mm clearance between cams
+        cam_y_positions = []
+        y_cursor = 0.0
+        for idx, hw in enumerate(cam_half_widths):
+            if idx == 0:
+                y_cursor = hw  # first cam: center at its half-width
+            else:
+                y_cursor += cam_half_widths[idx - 1] + cam_gap + hw
+            cam_y_positions.append(y_cursor)
+
+        # Center on Y=0
+        y_center = (cam_y_positions[0] + cam_y_positions[-1]) / 2 if cam_y_positions else 0
+        cam_y_positions = [y - y_center for y in cam_y_positions]
+
+        # Apply translations
+        for idx, cn in enumerate(cam_names_ordered):
+            m = self.cam_meshes.get(cn)
+            if m is not None:
+                m.apply_translation([0, cam_y_positions[idx], cz - cam_thickness / 2])
+
+        # Update chassis cam_spacing to actual max for shaft length calculation
+        if len(cam_y_positions) > 1:
+            actual_span = cam_y_positions[-1] - cam_y_positions[0]
+            chassis_config.cam_spacing = actual_span / max(len(cam_y_positions) - 1, 1)
+        chassis_config.num_cams = len(self.cams)
+        chassis_config.compute_camshaft_length()
+
+        # Auto-resize chassis depth to fit cam array + shaft
+        # Use absolute Y bounds to handle asymmetric cam profiles
+        if self.cam_meshes:
+            all_cam_y_min = min(m.bounds[0][1] for m in self.cam_meshes.values() if len(m.faces) > 0)
+            all_cam_y_max = max(m.bounds[1][1] for m in self.cam_meshes.values() if len(m.faces) > 0)
+            max_y_extent = max(abs(all_cam_y_min), abs(all_cam_y_max))
+            needed_depth = 2 * max_y_extent + 2 * chassis_config.wall_thickness + 15  # 15mm margin
+            needed_depth = max(needed_depth, 60.0)  # minimum 60mm
+            if needed_depth > chassis_config.depth:
+                chassis_config.depth = round(needed_depth / 5) * 5  # round to 5mm
+                print(f"  ⚠ chassis depth auto-resized to {chassis_config.depth}mm (cam Y extent ±{max_y_extent:.0f}mm)")
+                chassis_config.compute_camshaft_length()
 
         guides = []
         for i, track in enumerate(self.scene.tracks):
