@@ -16203,8 +16203,8 @@ def test_master(verbose: bool = True) -> bool:
         all_ok = False
     print()
     
-    # ── Phase 5: Sanity Checks ──
-    print("━━━ PHASE 5: Sanity & Coverage ━━━")
+    # ── Phase 5: Sanity Checks + REAL Validation ──
+    print("━━━ PHASE 5: Sanity & Real Validation ━━━")
     import re
     with open(__file__) as f:
         content = f.read()
@@ -16225,6 +16225,38 @@ def test_master(verbose: bool = True) -> bool:
     print(f"  {'✅' if n_checks_called >= 48 else '⚠'} checks called in runner: {n_checks_called}/{n_checks_defined} ({n_dead} dead code)")
     
     if n_severity != 1 or n_violation != 1 or n_checks_defined < 90:
+        all_ok = False
+    
+    # REAL validation: generate 1 preset and verify 0 errors
+    print()
+    print("  Real validation (nodding_bird):")
+    try:
+        import io as _io
+        _old_stdout = sys.stdout
+        sys.stdout = _io.StringIO()
+        _test_gen = AutomataGenerator(create_nodding_bird(MotionStyle.FLUID), seed=42)
+        _test_result = _test_gen.generate()
+        sys.stdout = _old_stdout
+        
+        _cv = _test_result.get('constraint_violations', [])
+        _av = _test_result.get('assembly_violations', [])
+        _n_err = sum(1 for v in _cv if v.severity == Severity.ERROR)
+        _n_warn = sum(1 for v in _cv if v.severity == Severity.WARNING)
+        _n_parts = len(_test_result.get('parts', {}))
+        
+        print(f"  {'✅' if _n_parts >= 5 else '❌'} Parts generated: {_n_parts}")
+        print(f"  {'✅' if _n_err == 0 else '❌'} Constraint errors: {_n_err}")
+        print(f"  {'✅' if len(_av) == 0 else '❌'} Assembly violations: {len(_av)}")
+        print(f"  ℹ  Warnings: {_n_warn}")
+        
+        if _n_err > 0 or len(_av) > 0 or _n_parts < 5:
+            all_ok = False
+            for v in _cv:
+                if v.severity == Severity.ERROR:
+                    print(f"    🔴 {v.code}: {v.message[:80]}")
+    except Exception as e:
+        sys.stdout = _old_stdout
+        print(f"  ❌ Real validation CRASH: {e}")
         all_ok = False
     print()
     
