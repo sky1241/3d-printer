@@ -3257,6 +3257,93 @@ def validate_mesh_fdm(mesh, part_name, profile=None, part_type="structural",
     return result
 
 
+def validate_assembly_post_generate(parts, chassis_config, verbose=False):
+    """Post-generate validation on REAL meshes. Returns list of violation strings."""
+    violations = []
+    cz = chassis_config.shaft_center_z
+
+    # ── MESH QUALITY ──
+    for name, mesh in parts.items():
+        if not isinstance(mesh, trimesh.Trimesh):
+            violations.append(f"MESH-TYPE: {name} is {type(mesh).__name__}")
+            continue
+        if mesh.volume <= 0:
+            violations.append(f"MESH-VOL: {name} volume={mesh.volume:.4f}")
+        if len(mesh.faces) < 4:
+            violations.append(f"MESH-EMPTY: {name} {len(mesh.faces)} faces")
+        degen = int(np.sum(mesh.area_faces < 1e-10))
+        if degen > 0:
+            violations.append(f"MESH-DEGEN: {name} {degen} degenerate faces")
+
+    # ── SPATIAL COHERENCE ──
+    shaft = parts.get('camshaft')
+    if shaft is not None:
+        sb = shaft.bounds
+        for name_p, mesh_p in parts.items():
+            if name_p.startswith('cam_'):
+                cb = mesh_p.bounds
+                cam_z_center = (cb[0][2] + cb[1][2]) / 2
+                if abs(cam_z_center - cz) > 5.0:
+                    violations.append(f"SPATIAL-CAM-Z: {name_p} Z={cam_z_center:.1f} vs cz={cz:.1f}")
+
+    # ── DIMENSIONAL ──
+    bounds_min = np.array([999, 999, 999], dtype=float)
+    bounds_max = np.array([-999, -999, -999], dtype=float)
+    for name_p, mesh_p in parts.items():
+        if isinstance(mesh_p, trimesh.Trimesh) and len(mesh_p.faces) > 0:
+            bounds_min = np.minimum(bounds_min, mesh_p.bounds[0])
+            bounds_max = np.maximum(bounds_max, mesh_p.bounds[1])
+    total_size = bounds_max - bounds_min
+    for axis, dim, limit in zip(['X', 'Y', 'Z'], total_size, [256, 256, 256]):
+        if dim > limit:
+            violations.append(f"DIM-PRINT: {axis}={dim:.0f}mm > {limit}mm")
+
+    # ── COLLISION (AABB, real bugs only) ──
+    skip_pairs = [
+        ('camshaft', 'cam_'), ('camshaft', 'collar_'),
+        ('wall_', 'camshaft_bracket'), ('base_plate', 'wall_'),
+        ('base_plate', 'motor_mount'), ('follower_guide_', 'fig_'),
+    ]
+    part_names = list(parts.keys())
+    for i in range(len(part_names)):
+        for j in range(i + 1, len(part_names)):
+            n1, n2 = part_names[i], part_names[j]
+            m1, m2 = parts[n1], parts[n2]
+            if not isinstance(m1, trimesh.Trimesh) or not isinstance(m2, trimesh.Trimesh):
+                continue
+            if len(m1.faces) < 4 or len(m2.faces) < 4:
+                continue
+            # Skip expected overlaps
+            skip = False
+            for s1, s2 in skip_pairs:
+                if (n1.startswith(s1) and n2.startswith(s2)) or (n1.startswith(s2) and n2.startswith(s1)):
+                    skip = True
+                    break
+            if skip:
+                continue
+            # Skip fig↔fig joints (intentional)
+            if n1.startswith('fig_') and n2.startswith('fig_'):
+                continue
+            b1, b2 = m1.bounds, m2.bounds
+            if (b1[0][0] <= b2[1][0] and b1[1][0] >= b2[0][0] and
+                    b1[0][1] <= b2[1][1] and b1[1][1] >= b2[0][1] and
+                    b1[0][2] <= b2[1][2] and b1[1][2] >= b2[0][2]):
+                overlap = np.minimum(b1[1], b2[1]) - np.maximum(b1[0], b2[0])
+                if np.all(overlap > 1.0):
+                    violations.append(f"COLLISION: {n1}∩{n2} [{overlap[0]:.0f}×{overlap[1]:.0f}×{overlap[2]:.0f}mm]")
+
+    if verbose:
+        if violations:
+            print(f"  ⚠ {len(violations)} assembly violations:")
+            for v in violations[:5]:
+                print(f"    {v}")
+            if len(violations) > 5:
+                print(f"    ... and {len(violations) - 5} more")
+        else:
+            print(f"  ✓ Assembly validation: 0 violations")
+    return violations
+
+
 def optimize_print_orientation(mesh, n_samples=50, overhang_angle=45.0,
                                 w_overhang=1.0, w_height=0.3, w_footprint=-0.2):
     best_orient, best_score = (0., 0., 0.), float('inf')
@@ -6084,7 +6171,7 @@ class AutomataGenerator:
         print(f"{'═'*60}\n")
 
         # Step 1: Validate
-        print("[1/7] Validation...")
+        print("[1/8] Validation...")
         errors = self.scene.validate()
         for e in errors: print(f"  ⚠ {e}")
         if errors:
@@ -6096,14 +6183,14 @@ class AutomataGenerator:
         if not errors: print("  ✓ Scène valide")
 
         # Step 2: Compile cams
-        print("[2/7] Compilation mouvement → cames...")
+        print("[2/8] Compilation mouvement → cames...")
         self.cams = compile_scene_to_cams(self.scene)
         print(f"  → {len(self.cams)} came(s)")
         for cam in self.cams:
             print(f"    · {cam.name}: {len(cam.segments)} segments, phase={cam.phase_offset_deg}°")
 
         # Step 3: Phase optimization
-        print("[3/7] Optimisation phases...")
+        print("[3/8] Optimisation phases...")
         if len(self.cams) > 1:
             opt_phases, opt_peak = optimize_phases(self.cams)
             for cam, phase in zip(self.cams, opt_phases):
@@ -6118,13 +6205,13 @@ class AutomataGenerator:
             print(f"  → 1 came, peak: {opt_peak:.1f} mN·m")
 
         # Step 4: Motor check
-        print("[4/7] Moteur...")
+        print("[4/8] Moteur...")
         self.motor_check = check_motor_feasibility(opt_peak, self.scene.motor_stall_torque_mNm)
         s = "✓" if self.motor_check["feasible"] else "✗"
         print(f"  {s} {self.motor_check['recommendation']} (marge: {self.motor_check['margin_percent']}%)")
 
         # Step 5: Geometry
-        print("[5/7] Géométrie...")
+        print("[5/8] Géométrie...")
         # Create chassis config FIRST — needed for cam/follower Z positioning
         chassis_config = ChassisConfig(width=80, depth=60, total_height=70, num_cams=len(self.cams),
                                       drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
@@ -6316,7 +6403,7 @@ class AutomataGenerator:
         )
 
         # Step 6: FDM
-        print("[6/7] Validation FDM...")
+        print("[6/8] Validation FDM...")
         for name, mesh in self.all_parts.items():
             pt = "cam" if "cam_" in name else "follower" if "follower" in name else "structural"
             result = validate_mesh_fdm(mesh, name, part_type=pt)
@@ -6327,22 +6414,30 @@ class AutomataGenerator:
         print(f"  → {ok}/{len(self.validation_results)} imprimables")
 
         # Step 7: Timing
-        print("[7/7] Timing diagram...")
+        print("[7/8] Timing diagram...")
         self.timing_data = generate_timing_diagram(self.cams)
         self.timing_data['motor_stall_mNm'] = self.scene.motor_stall_torque_mNm
         self.timing_data['safety_margin'] = self.motor_check.get('margin_percent', 0)
         print(f"  → Peak: {self.timing_data['peak_torque_mNm']:.1f} mN·m")
 
         elapsed = time.time() - t0
+
+        # Step 8: Assembly validation (real geometry checks)
+        print("[8/8] Validation assemblage...")
+        self.assembly_violations = validate_assembly_post_generate(
+            self.all_parts, chassis_config, verbose=True)
+
         print(f"\n{'─'*60}")
         print(f"✓ Génération en {elapsed:.1f}s — {len(self.all_parts)} pièces")
-        print(f"  Briques: B1-B8 toutes implémentées")
+        n_v = len(self.assembly_violations)
+        print(f"  Validation: {n_v} violation{'s' if n_v != 1 else ''}")
         print(f"{'─'*60}")
 
         return {"parts": self.all_parts, "cams": self.cams,
                 "cam_designs": getattr(self, '_cam_designs', {}),
                 "timing": self.timing_data, "motor": self.motor_check,
-                "validation": self.validation_results}
+                "validation": self.validation_results,
+                "assembly_violations": self.assembly_violations}
 
     def generate_assembly_guide(self) -> str:
         """Génère ASSEMBLY.md — guide de montage dynamique basé sur les pièces réelles."""
