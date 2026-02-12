@@ -1646,8 +1646,9 @@ def _make_shaft_and_drive(config, cam_count, cz, parts):
     """Shared: camshaft + drive (crank or motor) + collars."""
     shaft = trimesh.creation.cylinder(radius=config.camshaft_diameter/2,
                                        height=config.camshaft_length, sections=24)
-    shaft.apply_translation([0, 0, cz])
+    # FIX SPATIAL-1: rotate FIRST (align cylinder along Y), then translate to height
     shaft.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
+    shaft.apply_translation([0, 0, cz])
     parts["camshaft"] = shaft
     if config.drive_mode == 'crank':
         parts["crank_handle"] = create_crank_handle(config, z_position=cz)
@@ -3893,7 +3894,15 @@ class MotionPrimitive:
             return {"type": "rise" if self.direction > 0 else "return",
                     "beta_deg": self.beta, "height": self.amplitude,
                     "law": MotionLaw.MODIFIED_TRAP.value}
-        return {"type": "dwell", "beta_deg": self.beta, "height": 0.0}
+        elif self.kind == "RISE":
+            return {"type": "rise", "beta_deg": self.beta, "height": self.amplitude, "law": self.law.value}
+        elif self.kind == "RETURN":
+            return {"type": "return", "beta_deg": self.beta, "height": self.amplitude, "law": self.law.value}
+        elif self.kind == "DWELL":
+            return {"type": "dwell", "beta_deg": self.beta, "height": 0.0}
+        else:
+            raise ValueError(f"MotionPrimitive: kind inconnu '{self.kind}'. "
+                             f"Valeurs valides: PAUSE, LIFT, SLIDE, ROTATE, NOD, WAVE, SNAP, RISE, RETURN, DWELL")
 
 
 @dataclass
@@ -3917,7 +3926,25 @@ class MotionTrack:
 
     def to_cam_segments(self):
         self.normalize_to_360()
-        segments = [p.to_cam_segment() for p in self.primitives]
+        raw = [p.to_cam_segment() for p in self.primitives]
+        # Convert dicts to CamSegment objects for compatibility with CamProfile.evaluate()
+        segments = []
+        for sd in raw:
+            if isinstance(sd, CamSegment):
+                segments.append(sd)
+            elif isinstance(sd, dict):
+                if sd["type"] == "rise_return":
+                    # Split rise_return into separate rise + return segments to preserve beta info
+                    segments.append(CamSegment(
+                        "rise", sd.get("beta_rise_deg", sd.get("beta_deg", 90) / 2),
+                        sd["height"], sd.get("law", "cycloidal")))
+                    segments.append(CamSegment(
+                        "return", sd.get("beta_return_deg", sd.get("beta_deg", 90) / 2),
+                        sd["height"], sd.get("law", "cycloidal")))
+                else:
+                    segments.append(CamSegment(
+                        sd["type"], sd.get("beta_deg", 90),
+                        sd.get("height", 0), sd.get("law", "cycloidal")))
         if self.frequency_multiplier > 1:
             base = segments.copy()
             for _ in range(self.frequency_multiplier - 1):
@@ -3964,6 +3991,8 @@ class AutomataScene:
             if abs(total - target) > 5.0 and total > 0:
                 errors.append(f"Track '{track.name}': beta={total:.1f}° (≠{target:.0f}°)")
             for p in track.primitives:
+                if p.kind not in ("PAUSE", "DWELL", "LIFT", "SLIDE", "ROTATE", "NOD", "WAVE", "SNAP", "RISE", "RETURN"):
+                    errors.append(f"Track '{track.name}': kind='{p.kind}' inconnu — valeurs: PAUSE, LIFT, SLIDE, ROTATE, NOD, WAVE, SNAP, RISE, RETURN, DWELL.")
                 if p.amplitude < 0:
                     errors.append(f"Track '{track.name}': amplitude={p.amplitude}° négative — utiliser valeur positive.")
                 if p.amplitude == 0:
@@ -4456,7 +4485,14 @@ def compile_scene_to_cams(scene: AutomataScene) -> list:
         segments_data = cam_program[track.name]
         segments = []
         for sd in segments_data:
-            if sd["type"] == "rise_return":
+            # Handle both CamSegment objects and dicts
+            if isinstance(sd, CamSegment):
+                if sd.seg_type == "rise_return":
+                    segments.append(CamSegment("rise", sd.beta_deg / 2, sd.height, sd.law))
+                    segments.append(CamSegment("return", sd.beta_deg / 2, sd.height, sd.law))
+                else:
+                    segments.append(sd)
+            elif sd["type"] == "rise_return":
                 segments.append(CamSegment(
                     "rise", sd.get("beta_rise_deg", sd.get("beta_deg", 90) / 2),
                     sd["height"], sd.get("law", "cycloidal")))
@@ -5970,6 +6006,12 @@ class AutomataGenerator:
         print("[1/7] Validation...")
         errors = self.scene.validate()
         for e in errors: print(f"  ⚠ {e}")
+        if errors:
+            critical = [e for e in errors if "amplitude" in e.lower() and ("négative" in e.lower() or "negative" in e.lower())
+                        or "aucun track" in e.lower() or "no track" in e.lower()]
+            if critical:
+                raise ValueError(f"Scène invalide — {len(critical)} erreur(s) critique(s):\n" +
+                                 "\n".join(f"  • {e}" for e in critical))
         if not errors: print("  ✓ Scène valide")
 
         # Step 2: Compile cams
@@ -8782,36 +8824,6 @@ PHYSICS = {
     "snap_fit_deflection_max_mm": 2.0,    # Déflexion max clip PLA
     "snap_fit_strain_max_percent": 2.0,   # PLA non-ductile → 2% max
 }
-
-def _pv_product(contact_pressure_mpa: float, sliding_speed_m_s: float) -> float:
-    """Produit Pression × Vitesse (critère d'usure tribologique)."""
-    return contact_pressure_mpa * sliding_speed_m_s
-
-
-def _cam_surface_speed_m_s(Rb_mm: float, amplitude_mm: float,
-                            rpm: float) -> float:
-    """Vitesse de glissement approximative came/galet en m/s.
-    Approximation: v ≈ ω × R_moyen (rayon moyen du profil)."""
-    R_mean = (Rb_mm + amplitude_mm / 2) / 1000  # m
-    omega = rpm * 2 * math.pi / 60  # rad/s
-    return omega * R_mean
-
-
-def _natural_frequency_hz(mass_kg: float, stiffness_N_per_m: float) -> float:
-    """Fréquence propre d'un système masse-ressort."""
-    if mass_kg <= 0 or stiffness_N_per_m <= 0:
-        return float('inf')
-    return math.sqrt(stiffness_N_per_m / mass_kg) / (2 * math.pi)
-
-
-def _stress_from_cam_force(force_N: float, cross_section_mm2: float) -> float:
-    """Contrainte en MPa."""
-    if cross_section_mm2 <= 0:
-        return float('inf')
-    return force_N / cross_section_mm2
-
-
-
 
 def check_exotic_cas101_rotation_pure(tracks: List[Dict]) -> List[Violation]:
     """Détecte les mouvements qui sont des rotations pures continues.

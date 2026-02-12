@@ -5,15 +5,15 @@
 
 ## RÉSUMÉ EXÉCUTIF
 
-| Catégorie | Critique 🔴 | Warning ⚠ | Info ℹ |
+| Catégorie | Critique 🔴 | Warning ⚠ | Fixé ✅ |
 |-----------|:-----------:|:---------:|:------:|
 | Assemblage spatial | 4 | — | — |
-| Moteur de cames | 2 | 1 | — |
-| Constraint engine | 2 | 1 | — |
-| Export / Documentation | — | 3 | 1 |
+| Moteur de cames | 1 | 1 | 1 |
+| Constraint engine | — | 1 | 2 |
+| Export / Documentation | — | 3 | — |
 | Web UI | — | 3 | — |
-| Code quality | — | 1 | 2 |
-| **Total** | **8** | **9** | **3** |
+| Code quality | — | — | 1 |
+| **Total** | **5** | **8** | **4** |
 
 94/94 tests internes passent. **Aucun** de ces bugs n'est détecté par la test suite.
 
@@ -49,21 +49,14 @@
 - **Impact** : Came dépasse du boîtier, collision avec les murs
 - **La contrainte CAM_TOO_LARGE le détecte mais generate() ignore les erreurs**
 
-### CAM-2 : `MotionPrimitive.to_cam_segment()` — fallthrough silencieux
-- **Lieu** : `to_cam_segment()` L3879
-- **Bug** : Seuls LIFT/SLIDE/ROTATE/NOD/WAVE/SNAP/PAUSE sont gérés. Tout autre kind (RISE, RETURN, lowercase, typo) retourne `{type: dwell, height: 0}`. **Zéro erreur.**
-- **Impact** : L'utilisateur crée kind="RISE" → cam plate, pas de mouvement
-- **Fix** : `raise ValueError(f"Unknown kind: {self.kind}")` dans le default
+### CAM-2 : ~~`MotionPrimitive.to_cam_segment()` — fallthrough silencieux~~ → FIXÉ ✅
+- **Fix** : Ajouté support RISE/RETURN/DWELL + `raise ValueError` sur kind inconnu
 
-### CE-1 : `--diagnose` ne lance PAS le constraint engine
-- **Lieu** : main/argparse handler pour `--diagnose`
-- **Bug** : `--validate` lance 94 checks et trouve 5-12 erreurs. `--diagnose` trouve 0.
-- **Impact** : L'utilisateur pense que son automate est valide
+### CE-1 : ~~`--diagnose` ne lance PAS le constraint engine~~ → FAUX POSITIF
+- **Statut** : ✅ PAS un bug. `--diagnose` utilise `❌` au lieu de `🔴`, ce qui a faussé le comptage automatique. La contrainte engine tourne correctement.
 
-### CE-2 : `generate()` ignore les erreurs de `validate()`
-- **Lieu** : `generate()` Step 1
-- **Bug** : `scene.validate()` retourne des erreurs mais `generate()` continue
-- **Impact** : Scènes invalides produisent des automates cassés silencieusement
+### CE-2 : ~~`generate()` ignore les erreurs de `validate()`~~ → FIXÉ ✅
+- **Fix** : `generate()` bloque maintenant sur erreurs critiques (amplitude négative, no tracks). Warnings restent non-bloquants.
 
 ---
 
@@ -87,11 +80,8 @@
 ### UI-W2 : Flask POST /generate avec preset inconnu → 200 OK (devrait être 400)
 ### UI-W3 : Flask POST /generate sans body → 200 OK (devrait être 400)
 
-### CODE-W1 : 4 fonctions dupliquées identiques (dead code)
-- `_stress_from_cam_force` (L7179 + L8807)
-- `_pv_product` (L7158 + L8786)
-- `_natural_frequency_hz` (L7172 + L8800)
-- `_cam_surface_speed_m_s` (L7163 + L8791)
+### CODE-W1 : ~~4 fonctions dupliquées identiques~~ → FIXÉ ✅
+- Supprimé les secondes occurrences de `_pv_product`, `_cam_surface_speed_m_s`, `_natural_frequency_hz`, `_stress_from_cam_force`
 
 ---
 
