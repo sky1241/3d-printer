@@ -5,22 +5,23 @@
 
 ---
 
-## BASELINE (avant P9+)
+## CURRENT STATE (post-P12)
 
 ```
-Commit: 37517e0
+Commit: 1e43980
 Date: 12 fév 2026
 
-✅ nodding_bird    0E 3W  parts=19  lev=1  brk=1  wt=19/19
-✅ walking_figure  0E 5W  parts=32  lev=4  brk=4  wt=32/32
-✅ drummer         0E 4W  parts=25  lev=2  brk=2  wt=25/25
-✅ swimming_fish   0E 2W  parts=20  lev=1  brk=1  wt=20/20
-✅ waving_cat      0E 3W  parts=20  lev=1  brk=1  wt=20/20
-✅ flapping_bird   0E 11W parts=26  lev=2  brk=2  wt=26/26
-✅ blacksmith      0E 3W  parts=19  lev=1  brk=1  wt=19/19
-✅ bobbing_duck    0E 3W  parts=18  lev=1  brk=1  wt=18/18
-✅ rocking_horse   0E 5W  parts=22  lev=0  brk=0  wt=22/22
+✅ nodding_bird    0E 17W  parts=19  lev=1  brk=1  wt=19/19
+✅ walking_figure  0E 27W  parts=32  lev=4  brk=4  wt=32/32
+✅ drummer         0E 25W  parts=25  lev=2  brk=2  wt=25/25
+✅ swimming_fish   0E 16W  parts=20  lev=1  brk=1  wt=20/20
+✅ waving_cat      0E 18W  parts=20  lev=1  brk=1  wt=20/20
+✅ flapping_bird   0E 32W  parts=26  lev=2  brk=2  wt=26/26
+✅ blacksmith      0E 18W  parts=19  lev=1  brk=1  wt=19/19
+✅ bobbing_duck    0E 17W  parts=18  lev=1  brk=1  wt=18/18
+✅ rocking_horse   0E 22W  parts=22  lev=0  brk=0  wt=22/22
 test_master: ALL PASS
+77/94 checks wired (82%)
 ```
 
 ## HISTORIQUE DES PUSHES (Sessions 10-14)
@@ -39,6 +40,11 @@ test_master: ALL PASS
 | 10 | `3092d45` | feat(P6b): 11 more checks (37/94) | — | 9/9 ✅ |
 | 11 | `4e74d0a` | feat(P7): lever brackets | — | 9/9 ✅ |
 | 12 | `c532b2c` | feat(P8): follower reach | — | 9/9 ✅ |
+| 13 | `1101463` | infra: regression_test.py + DEBUG_LOG | — | 9/9 ✅ |
+| 14 | `83a962a` | feat(P9): 6 dead-code checks (43/94) | ✅ NO REGRESS | 9/9 ✅ |
+| 15 | `652e86f` | feat(P10): 8 more checks (51/94) | ✅ NO REGRESS | 9/9 ✅ |
+| 16 | `bc7a69e` | feat(P11): physics + trou18/23 (59/94) | ✅ NO REGRESS | 9/9 ✅ |
+| 17 | `1e43980` | feat(P12): exotics + remaining (77/94) | ✅ NO REGRESS | 9/9 ✅ |
 
 ---
 
@@ -46,12 +52,10 @@ test_master: ALL PASS
 
 | ID | Description | Priorité | Status |
 |----|-------------|----------|--------|
-| P9 | Crank handle clearance check | Facile | TODO |
-| P11 | Min wall thickness (ray-based) | Difficile | TODO |
-| P12 | Lever pivot pin + collar meshes | Moyen | TODO |
-| P13 | Wire remaining ~57 N/A checks (gear, geneva, etc.) | Low | SKIP — pas de mécanismes |
-| P14 | offset_pressure_angle (trou60) | Moyen | TODO |
-| P15 | min_teeth gear check (trou62) | Low | SKIP — pas d'engrenages |
+| — | 17 checks non branchés | N/A | gear/geneva/crank (pas dans nos presets) ou dict-return |
+| — | Min wall thickness (ray-based) | Difficile | FUTURE |
+| — | Lever pivot pin + collar meshes | Moyen | FUTURE |
+| — | Assembly guide PDF | Moyen | FUTURE |
 
 ## WARNINGS CONNUS (pas des bugs, design choices)
 

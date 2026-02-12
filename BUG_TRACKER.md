@@ -107,7 +107,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ├─────────────────────────────────┼──────────────────┤
 │ test_master --test              │ ✅ ALL PASS      │
 │ 94 check_* fonctions définies   │ ✅ 94 trouvées   │
-│ checks branchés sur réel        │ 37/94 (39%) + P8 │
+│ checks branchés sur réel        │ 77/94 (82%)      │
 │ checks dans run_all_constraints │ 48/94 (51%)      │
 │ dead code (jamais appelé)       │ 46/94 (49%)      │
 │ validate_assembly (Step 8)      │ ✅ 9/9 presets   │
@@ -141,8 +141,8 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ```
 9/9 presets : 0 erreurs, 0 assembly violations
 188 parts total, 13 leviers
-37/94 checks branchés + P8 inline (39%)
+77/94 checks branchés (82%)
 13 lever brackets generated
-~36 warnings (design, pas bugs)
+~200 warnings total (design recommendations, pas bugs)
 ALL PASS ✅
 ```
