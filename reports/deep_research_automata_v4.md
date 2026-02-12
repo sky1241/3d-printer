@@ -145,3 +145,13 @@ Spatial alignment (nodding_bird):
 ### ⚠ Collisions
 - Les collisions détectées à l'audit (11 pour nodding_bird) ont probablement changé avec les fixes spatiaux
 - **Action** : re-run collision detection post-fixes
+
+### Fix 7: CAM-1 — `095fc07`
+- `auto_design_cam()` gets `Rb_max` param with fallback cascade:
+  1. Relax φ_max from 30° to 45° (safe for PLA at low speed)
+  2. Reduce safety factor from 2.0 to 1.2
+  3. Hard clamp Rb at Rb_max
+- Caller computes `Rb_max = R_available - max_amplitude - rf`
+- When amplitude exceeds space: auto-scale displacement, flag `lever_needed=true`
+- Results: 0/16 oversized (was 9/16), lever needed for 13/16 cams
+- Worst case: blacksmith 267×279mm → 23×27mm (lever ×2.9)
