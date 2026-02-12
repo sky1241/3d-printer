@@ -76,3 +76,11 @@ test_master: ALL PASS
 4. Si "REGRESSION DETECTED" → git checkout -- . (rollback)
 5. Mettre à jour ce fichier après chaque push
 ```
+
+## Session 15 — P13/P14/P15
+
+| # | Commit | Description | Régression? | Résultat |
+|---|--------|-------------|-------------|----------|
+| 18 | `2c16739` | feat(P13): pivot pins + collars | ✅ NO REGRESS | 9/9 ✅ |
+| 19 | `3f3dd19` | feat(P14): ray-based wall thickness | ✅ NO REGRESS | 9/9 ✅ |
+| 20 | (P15) | feat(P15): assembly guide PDF | ✅ NO REGRESS | 9/9 ✅ |
