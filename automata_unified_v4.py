@@ -3257,6 +3257,178 @@ def validate_mesh_fdm(mesh, part_name, profile=None, part_type="structural",
     return result
 
 
+def run_real_constraint_checks(gen, chassis_config):
+    """Wire existing check_* functions to REAL data from generate().
+    Returns list of Violation objects from the constraint engine."""
+    violations = []
+    cam_thickness = 5.0
+    rf = 3.0  # roller follower radius
+
+    # ── CAM GEOMETRY CHECKS ──
+
+    # trou1: cam collision (ADAPTED — use Y bounds, not Z, since our cams share Z)
+    if len(gen.cam_meshes) > 1:
+        cam_list_y = []
+        for cam in gen.cams:
+            mn = f"cam_{cam.name}"
+            m = gen.cam_meshes.get(mn)
+            if m and len(m.faces) > 0:
+                b = m.bounds
+                cam_list_y.append({
+                    'name': cam.name,
+                    'z_min_mm': float(b[0][1]),  # Using Y as "axial" for our layout
+                    'z_max_mm': float(b[1][1]),
+                    'Rmax_mm': float(max(b[1][0] - b[0][0], b[1][1] - b[0][1]) / 2),
+                    'thickness_mm': float(b[1][2] - b[0][2]),
+                })
+        if cam_list_y:
+            v1 = check_trou1_cam_collision(cam_list_y)
+            for v in v1:
+                v.message = v.message.replace('axialement', 'latéralement (Y)')
+            violations.extend(v1)
+
+    # trou3: pressure angle (downgrade if lever compensates)
+    trou3_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        # If lever_needed, the relaxed phi_max (up to 45°) is by design
+        phi_limit = 45.0 if cd.get('lever_needed', False) else 30.0
+        trou3_data.append({
+            'name': cam.name,
+            'follower_type': 'translating_roller',
+            'phi_max_deg': cd.get('phi_max_deg', 30),
+            'rho_min_mm': cd.get('Rb_mm', 10),
+            'roller_radius_mm': rf,
+            'phi_limit_deg': phi_limit,
+        })
+    violations.extend(check_trou3_pressure_angle(trou3_data))
+
+    # trou8: cumulative lift
+    trou8_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        total_h = sum(abs(seg.height) for seg in cam.segments)
+        trou8_data.append({
+            'name': cam.name,
+            'h_total_mm': total_h,
+            'Rb_mm': cd.get('Rb_mm', 10),
+            'has_lever': cd.get('lever_needed', False),
+        })
+    violations.extend(check_trou8_cumulative_lift(trou8_data))
+
+    # trou33: roller sizing
+    trou33_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        trou33_data.append({
+            'name': cam.name,
+            'Rb_mm': cd.get('Rb_mm', 10),
+            'roller_radius_mm': rf,
+        })
+    violations.extend(check_trou33_roller_sizing(trou33_data))
+
+    # trou34: cam thickness
+    trou34_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        max_amp = max(abs(seg.height) for seg in cam.segments)
+        trou34_data.append({
+            'name': cam.name,
+            'Rb_mm': cd.get('Rb_mm', 10),
+            'amplitude_mm': max_amp * cd.get('amp_scale', 1.0),
+            'thickness_mm': cam_thickness,
+            'max_contact_force_N': 2.0,
+        })
+    violations.extend(check_trou34_cam_thickness(trou34_data))
+
+    # trou35: dwell angles
+    trou35_data = []
+    for cam in gen.cams:
+        for seg in cam.segments:
+            trou35_data.append({
+                'track_name': cam.name,
+                'segment_type': seg.seg_type,
+                'angle_deg': seg.beta_deg,
+            })
+    violations.extend(check_trou35_dwell_angles(trou35_data, rpm=gen.scene.cycle_rpm))
+
+    # trou28: motion law suitability
+    trou28_data = []
+    for cam in gen.cams:
+        for seg in cam.segments:
+            trou28_data.append({
+                'name': f"{cam.name}/{seg.seg_type}",
+                'motion_law': seg.law,
+                'beta_deg': seg.beta_deg,
+                'amplitude_mm': abs(seg.height),
+                'follower_mass_kg': 0.005,  # ~5g typical PLA follower
+            })
+    violations.extend(check_trou28_motion_law_suitability(trou28_data, rpm=gen.scene.cycle_rpm))
+
+    # trou29: Rb minimum (skip for lever_needed — cam intentionally undersized)
+    trou29_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        if cd.get('lever_needed', False):
+            continue  # Cam intentionally undersized, lever compensates
+        max_amp = max(abs(seg.height) for seg in cam.segments) * cd.get('amp_scale', 1.0)
+        non_dwell = [seg for seg in cam.segments if seg.seg_type != 'dwell']
+        max_beta = max(seg.beta_deg for seg in non_dwell) if non_dwell else 120
+        law = cam.segments[0].law if cam.segments else 'poly_4567'
+        trou29_data.append({
+            'name': cam.name,
+            'Rb_mm': cd.get('Rb_mm', 10),
+            'amplitude_mm': max_amp,
+            'beta_deg': max_beta,
+            'motion_law': law,
+            'roller_radius_mm': rf,
+            'offset_mm': 0.0,
+        })
+    if trou29_data:
+        violations.extend(check_trou29_Rb_min(trou29_data))
+
+    # ── SHAFT & CHASSIS CHECKS ──
+
+    # trou2: shaft length vs chassis
+    trou2_cam_data = []
+    for cam in gen.cams:
+        mn = f"cam_{cam.name}"
+        m = gen.cam_meshes.get(mn)
+        thickness = cam_thickness
+        if m and len(m.faces) > 0:
+            thickness = float(m.bounds[1][2] - m.bounds[0][2])
+        trou2_cam_data.append({'name': cam.name, 'thickness_mm': thickness})
+    inner_width = chassis_config.depth - 2 * chassis_config.wall_thickness
+    violations.extend(check_trou2_shaft_length(trou2_cam_data, inner_width))
+
+    # trou9: chassis dimensions
+    chassis_dims = {
+        'width': chassis_config.width,
+        'depth': chassis_config.depth,
+        'height': chassis_config.total_height,
+        'wall_thickness_mm': chassis_config.wall_thickness,
+    }
+    violations.extend(check_trou9_chassis(chassis_dims))
+
+    # trou16: cam phasing
+    phases = [cam.phase_offset_deg for cam in gen.cams]
+    retention = 'eclip' if len(gen.cams) > 0 else 'none'
+    v16 = check_trou16_cam_phasing(
+        num_cams=len(gen.cams),
+        phases_deg=phases,
+        retention_method=retention,
+        shaft_diameter_mm=chassis_config.camshaft_diameter,
+    )
+    violations.extend(v16)
+
+    # ── CLASSIFY BY SEVERITY ──
+    critical = [v for v in violations if v.severity == Severity.ERROR]
+    warnings = [v for v in violations if v.severity == Severity.WARNING]
+    info = [v for v in violations if v.severity == Severity.INFO]
+
+    return violations, {'critical': len(critical), 'warnings': len(warnings), 'info': len(info)}
+
+
 def validate_assembly_post_generate(parts, chassis_config, verbose=False):
     """Post-generate validation on REAL meshes. Returns list of violation strings."""
     violations = []
@@ -6427,6 +6599,23 @@ class AutomataGenerator:
         self.assembly_violations = validate_assembly_post_generate(
             self.all_parts, chassis_config, verbose=True)
 
+        # Step 8b: Constraint engine on real data
+        constraint_violations, severity_counts = run_real_constraint_checks(self, chassis_config)
+        self.constraint_violations = constraint_violations
+        n_crit = severity_counts['critical']
+        n_warn = severity_counts['warnings']
+        n_info = severity_counts['info']
+        if constraint_violations:
+            print(f"  Constraint engine: {n_crit} errors, {n_warn} warnings, {n_info} info")
+            for v in constraint_violations:
+                if v.severity == Severity.ERROR:
+                    print(f"    🔴 {v.code}: {v.message[:80]}")
+            for v in constraint_violations[:3]:
+                if v.severity == Severity.WARNING:
+                    print(f"    🟡 {v.code}: {v.message[:80]}")
+        else:
+            print(f"  ✓ Constraint engine: 0 violations")
+
         print(f"\n{'─'*60}")
         print(f"✓ Génération en {elapsed:.1f}s — {len(self.all_parts)} pièces")
         n_v = len(self.assembly_violations)
@@ -6437,7 +6626,8 @@ class AutomataGenerator:
                 "cam_designs": getattr(self, '_cam_designs', {}),
                 "timing": self.timing_data, "motor": self.motor_check,
                 "validation": self.validation_results,
-                "assembly_violations": self.assembly_violations}
+                "assembly_violations": self.assembly_violations,
+                "constraint_violations": self.constraint_violations}
 
     def generate_assembly_guide(self) -> str:
         """Génère ASSEMBLY.md — guide de montage dynamique basé sur les pièces réelles."""
