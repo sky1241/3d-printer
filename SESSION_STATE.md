@@ -1,70 +1,29 @@
-# 🧠 SESSION STATE — Post Deep Research Debug
-# Commit: e2ceaf4 | Date: 12 février 2026
-# Fichier: automata_unified_v4.py (~18350 lignes)
+# SESSION STATE — Post-retest complet
+# Commit: c33b092 | Date: 12 février 2026
 
----
+## RÉSUMÉ
+Tous les bugs deep research vérifiés un par un, retestés globalement.
+9/9 presets, 0 issues, B1-B9 tests passent.
 
-## RÉSUMÉ RAPIDE
+## BUGS VÉRIFIÉS (code lu + géométrie testée)
 
-**Tous les bugs identifiés par la deep research FDM sont résolus.**
-
-9/9 presets fonctionnels, 13/13 leviers connectés, toutes pièces watertight.
-
----
-
-## BUGS CORRIGÉS CETTE SESSION
-
-| Bug | Avant | Après | Commit |
-|-----|-------|-------|--------|
-| BUG-003 | Gap 1.5mm came↔levier | 0.2mm FDM clearance | `42b9af7` |
-| BUG-002 | Figurine non attachée | Pushrod Ø3mm + socket Ø3.3mm | `76a5c43` `ca24ea8` `41162e6` |
-| BUG-002c | Socket angled = miss | Socket vertical au centroid | `41162e6` |
-| BUG-001 | Follower guide "box" | Reclassé: U-channel OK (euler=0) | N/A |
-| BUG-004 | Snap functions dead code | Marquées UNUSED | `ca24ea8` |
-
----
+| Bug | Test | Résultat |
+|-----|------|----------|
+| BUG-003 | Gap cam→lever = 0.2mm | ✅ 15/15 |
+| BUG-002 | Pushrod Ø3mm + socket | ✅ 15/15 pushrods, 15 sockets |
+| BUG-005 | Cames sans levier | ✅ fix: max(ratio, 1.2) |
+| BUG-001 | Follower guide | ✅ 16/16 U-channels (euler=0) |
+| BUG-004 | Dead snap code | ✅ 2 fonctions UNUSED, 0 appels |
+| A1 | Wall bore/U-slot | ✅ 228v, vol_ratio=0.49 |
+| A3 | Lever pivot bore | ✅ 15/15 euler=0 |
+| A6 | Camshaft bracket | ✅ euler=-4 (3 trous) |
 
 ## CHAÎNE CINÉMATIQUE COMPLÈTE
+Motor → Camshaft → Cam → Lever (0.2mm gap) → Pushrod (Ø3mm) → Figurine (socket Ø3.3mm)
 
-```
-Motor/Crank → Camshaft → Cam (profil) 
-  → Lever (hinged follower, 0.2mm gap) 
-    → Pushrod (Ø3mm, angled) 
-      → Figurine (socket Ø3.3mm, vertical)
-```
-
-Chaque étape est maintenant physiquement connectée.
-
----
-
-## MÉTRIQUES ACTUELLES
-
-- **Presets:** 9/9 passent
-- **Pièces:** 22-48 par preset
-- **Watertight:** 100%
-- **Cam-lever gap:** 0.2mm (tous)
-- **Pushrods:** 13/13 leviers connectés
-- **Sockets:** ~28mm³ enlevé par boolean (manifold3d)
-- **Checks constraint:** 79/95 wired
-
----
-
-## CE QUI RESTE À FAIRE (FUTUR)
-
-1. **Bell-crank** — conversion mouvement vertical→horizontal
-2. **Engrenages** — rotation 360°, module ≥1mm
-3. **Collision auto** — trimesh.collision.CollisionManager
-4. **Kinematics** — simulation balayage 0→360°, export GIF
-5. **Scaling** — redimensionnement global avec recalcul tolérances
-
----
-
-## FICHIERS CLÉS
-
-| Fichier | Description |
-|---------|-------------|
-| `automata_unified_v4.py` | Code principal (~18350 lignes) |
-| `BUG_TRACKER_v2.md` | Tracker bugs enrichi deep research |
-| `DEEP_RESEARCH_PROMPT_v2.md` | Audit exhaustif 80 bugs + research |
-| `SESSION_STATE.md` | Ce fichier |
-| `CODEMAP.md` | Carte des fonctions |
+## MÉTRIQUES
+- Presets: 9/9
+- Parts total: 265
+- Levers: 15, Pushrods: 15, Guides: 16
+- Tests B1-B9: PASS
+- Constraint checks: 95 defined, 48 wired
