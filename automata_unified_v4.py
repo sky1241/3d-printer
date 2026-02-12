@@ -6170,6 +6170,8 @@ class AutomataGenerator:
         # Step 7: Timing
         print("[7/7] Timing diagram...")
         self.timing_data = generate_timing_diagram(self.cams)
+        self.timing_data['motor_stall_mNm'] = self.scene.motor_stall_torque_mNm
+        self.timing_data['safety_margin'] = self.motor_check.get('margin_percent', 0)
         print(f"  → Peak: {self.timing_data['peak_torque_mNm']:.1f} mN·m")
 
         elapsed = time.time() - t0
