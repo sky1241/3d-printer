@@ -1597,7 +1597,14 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
         for py, pz in bearing_positions:
             br = config.camshaft_diameter/2 + config.bearing_clearance
             if 2 * br >= t * 0.95:
-                bore_metadata.append({'y': py, 'z': pz, 'radius': br})
+                # Bore wider than wall → U-slot (open cradle from top)
+                slot_r = br + 0.1
+                bore_circle = Point(t/2, pz).buffer(slot_r, resolution=24)
+                slot_rect = shapely_box(t/2 - slot_r, pz, t/2 + slot_r, h + 1)
+                u_slot = bore_circle.union(slot_rect)
+                wall = wall.difference(u_slot)
+                if not wall.is_valid:
+                    wall = wall.buffer(0)
             else:
                 wall = wall.difference(Point(t/2, pz).buffer(br, resolution=24))
     if h > 40:
@@ -2694,8 +2701,18 @@ def create_bearing_wall_with_joints(config: 'ChassisConfig',
             bore = make_bore_hole_2d(t / 2, pz, joint_cfg, fit="free")
             bore_bounds = bore.bounds  # (minx, miny, maxx, maxy)
             if (bore_bounds[2] - bore_bounds[0]) >= t * 0.95:
-                # Bore wider than wall → skip 2D bore, annotate in metadata
-                pass
+                # Bore wider than wall → U-slot (open cradle from top)
+                # Shaft drops in from above, retained by gravity + collar
+                slot_r = (bore_bounds[2] - bore_bounds[0]) / 2 + 0.1  # slight extra clearance
+                slot_cx = t / 2
+                # Semi-circle at bearing center + vertical slot to top
+                from shapely.geometry import Point as _Pt
+                bore_circle = _Pt(slot_cx, pz).buffer(slot_r, resolution=24)
+                slot_rect = shapely_box(slot_cx - slot_r, pz, slot_cx + slot_r, h + 1)
+                u_slot = bore_circle.union(slot_rect)
+                wall = wall.difference(u_slot)
+                if not wall.is_valid:
+                    wall = wall.buffer(0)
             else:
                 wall = wall.difference(bore)
     
