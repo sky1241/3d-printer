@@ -3994,6 +3994,9 @@ class AutomataScene:
                                            "beta": p.beta, "law": p.law.value,
                                            "direction": p.direction} for p in t.primitives]}
                            for t in self.tracks]}
+        preset = getattr(self, '_preset_name', None)
+        if preset:
+            data['preset_name'] = preset
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     @classmethod
@@ -4022,6 +4025,7 @@ class AutomataScene:
                     beta=pd.get("beta", 90.0), law=MotionLaw(pd.get("law", "cycloidal")),
                     direction=pd.get("direction", 1)))
             scene.tracks.append(track)
+        scene._preset_name = d.get('preset_name', None)
         return scene
 
 
