@@ -1653,6 +1653,51 @@ def create_lever_bracket(pivot_pos, arm_width, pin_diameter, wall_thickness=3.0)
     return mesh
 
 
+def create_pivot_pin(pivot_pos, arm_width, pin_diameter, wall_thickness=3.0):
+    """Create a cylindrical pivot pin that goes through bracket + lever.
+    Pin length = bracket total width. Pin axis = Y (horizontal).
+    """
+    gap = arm_width + 0.5
+    pin_length = gap + 2 * wall_thickness + 2.0  # 1mm extra each side for collars
+    pin_d = pin_diameter - 0.3  # clearance fit in bore
+    
+    # Cylinder along Z, then rotate to Y axis
+    pin = trimesh.creation.cylinder(radius=pin_d / 2, height=pin_length, sections=24)
+    # Rotate Z→Y: rotate -90° around X
+    rot = trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0])
+    pin.apply_transform(rot)
+    # Position at pivot
+    pin.apply_translation(pivot_pos)
+    pin.metadata['part_type'] = 'pivot_pin'
+    return pin
+
+
+def create_collar(pivot_pos, pin_diameter, offset_y, wall_thickness=3.0):
+    """Create a retaining collar (ring) on the pivot pin.
+    Prevents lateral movement of the lever.
+    """
+    collar_od = pin_diameter * 1.8  # outer diameter
+    collar_id = pin_diameter - 0.2  # snug fit on pin
+    collar_t = 1.5  # thickness
+    
+    # Create annulus profile (ring cross-section) via shapely
+    outer_ring = Point(0, 0).buffer(collar_od / 2, resolution=16)
+    inner_ring = Point(0, 0).buffer(collar_id / 2, resolution=16)
+    annulus = outer_ring.difference(inner_ring)
+    if annulus.is_empty or not annulus.is_valid:
+        annulus = outer_ring  # fallback to solid disc
+    
+    collar = trimesh.creation.extrude_polygon(ensure_polygon(annulus), collar_t)
+    
+    # Rotate Z→Y (extrude was along Z, we want Y)
+    rot = trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0])
+    collar.apply_transform(rot)
+    # Position
+    collar.apply_translation([pivot_pos[0], pivot_pos[1] + offset_y, pivot_pos[2]])
+    collar.metadata['part_type'] = 'collar'
+    return collar
+
+
 def create_bearing_wall(config, side="left", bearing_positions=None):
     h, d, t = config.total_height, config.depth, config.wall_thickness
     wall = shapely_box(0, 0, t, h)
@@ -4321,6 +4366,20 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('bracket_lever_', 'cam_'),  # bracket near cam
         ('bracket_lever_', 'camshaft'),  # bracket near shaft
         ('bracket_lever_', 'follower_guide_'),  # bracket near follower
+        # P12+: pivot pin + collar skip pairs
+        ('pin_lever_', 'lever_'),  # pin goes through lever bore
+        ('pin_lever_', 'bracket_lever_'),  # pin goes through bracket
+        ('pin_lever_', 'cam_'),  # pin near cam
+        ('pin_lever_', 'camshaft'),  # pin near shaft
+        ('pin_lever_', 'collar_'),  # pin inside collar
+        ('collar_L_', 'bracket_lever_'),  # collar flush against bracket
+        ('collar_R_', 'bracket_lever_'),  # collar flush against bracket
+        ('collar_L_', 'lever_'),  # collar next to lever
+        ('collar_R_', 'lever_'),  # collar next to lever
+        ('collar_L_', 'pin_lever_'),  # collar on pin
+        ('collar_R_', 'pin_lever_'),  # collar on pin
+        ('collar_L_', 'cam_'),  # collar near cam
+        ('collar_R_', 'cam_'),  # collar near cam
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -7433,6 +7492,23 @@ class AutomataGenerator:
                     self.all_parts[f"bracket_lever_{cam.name}"] = bracket
                 except Exception:
                     pass  # Boolean may fail, bracket is optional
+                
+                # P12+: Add pivot pin + collars
+                try:
+                    pin_d = chassis_config.camshaft_diameter + 0.5
+                    wt = chassis_config.wall_thickness
+                    pin = create_pivot_pin(pivot_pos, arm_width=4.0,
+                                           pin_diameter=pin_d, wall_thickness=wt)
+                    self.all_parts[f"pin_lever_{cam.name}"] = pin
+                    
+                    gap = 4.0 + 0.5  # arm_width + clearance
+                    half_span = (gap / 2 + wt + 0.5)  # pillar + 0.5mm
+                    collar_l = create_collar(pivot_pos, pin_d, -half_span, wt)
+                    collar_r = create_collar(pivot_pos, pin_d, +half_span, wt)
+                    self.all_parts[f"collar_L_{cam.name}"] = collar_l
+                    self.all_parts[f"collar_R_{cam.name}"] = collar_r
+                except Exception:
+                    pass  # optional parts
         
         if lever_count > 0:
             print(f"  · Leviers: {lever_count} bras de levier générés")
