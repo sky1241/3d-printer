@@ -1116,7 +1116,7 @@ def auto_design_cam(
     if follower_type == "roller":
         if Rb_hint is None:
             Rb = compute_Rb_min_translating_roller(v, s, rf, phi_max_rad, eps)
-            Rb = max(Rb, rf + 2)
+            Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
         else:
             Rb = Rb_hint
 
@@ -1136,7 +1136,7 @@ def auto_design_cam(
                 if phi_limit < np.radians(45.0):
                     phi_limit = np.radians(45.0)
                     Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
-                    Rb = max(Rb, rf + 2)
+                    Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
                     continue
                 # Fallback 2: reduce safety factor
                 if safety > 1.2:
