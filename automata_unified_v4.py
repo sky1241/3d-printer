@@ -4054,7 +4054,7 @@ def run_real_constraint_checks(gen, chassis_config):
     violations.extend(check_trou26_safety(
         target_audience='child_6plus',
         smallest_part_mm=3.0,  # smallest feature
-        has_exposed_gears=chassis_config.drive_mode == 'motor',
+        has_exposed_gears=any('gear' in p for p in gen.all_parts),
         has_sharp_edges=False,
         battery_accessible=chassis_config.drive_mode == 'motor',
     ))
@@ -4198,6 +4198,8 @@ def run_real_constraint_checks(gen, chassis_config):
             'steps_per_revolution': 1,
             'external_load_N': 0.5,
             'load_lever_arm_mm': 30.0,
+            'output_direction': 'vertical',  # our automata always move up/down
+            'lever_ratio': gen._cam_designs.get(track.name, {}).get('lever_ratio', 1.0),
         })
 
     seg_data = []
@@ -4230,6 +4232,9 @@ def run_real_constraint_checks(gen, chassis_config):
 
     total_size = max(chassis_config.width, chassis_config.depth, chassis_config.total_height)
     violations.extend(check_exotic_cas110_scale(total_size))
+
+    # trou32: bell-crank recommendation for high lever ratios
+    violations.extend(check_trou32_bell_crank(track_data))
 
     # ── REMAINING PRINT/MECHANICAL CHECKS ──
 
@@ -4293,11 +4298,24 @@ def run_real_constraint_checks(gen, chassis_config):
             battery_voltage_V=6.0,
         ))
 
-    # trou72: infill recommendations per part type
+    # trou72: infill recommendations per part TYPE (not per part)
+    infill_types_seen = set()
     for pname in gen.all_parts:
-        ptype = 'cam' if 'cam_' in pname else 'chassis' if pname in ('base_plate', 'wall_left', 'wall_right') else 'figurine' if 'fig_' in pname else 'other'
-        infill = 40 if ptype == 'cam' else 20
-        violations.extend(check_trou_72_infill(ptype, infill))
+        if 'cam_' in pname and 'camshaft' not in pname:
+            ptype, infill = 'cam', 40
+        elif pname in ('base_plate', 'wall_left', 'wall_right'):
+            ptype, infill = 'chassis', 20
+        elif 'fig_' in pname:
+            ptype, infill = 'figurine', 20
+        elif 'follower' in pname:
+            ptype, infill = 'follower', 70
+        elif 'motor' in pname:
+            ptype, infill = 'motor_mount', 60
+        else:
+            continue
+        if ptype not in infill_types_seen:
+            infill_types_seen.add(ptype)
+            violations.extend(check_trou_72_infill(ptype, infill))
 
     # P14: ray-based minimum wall thickness
     try:
@@ -8832,10 +8850,12 @@ INFILL_RECOMMENDATIONS = {
     "shaft_bracket": (50, 80),
     "chassis_base": (20, 40),
     "chassis_wall": (20, 40),
+    "chassis": (20, 40),
     "follower": (80, 100),
     "lever": (60, 100),
     "figurine": (10, 20),
     "decorative": (10, 20),
+    "motor_mount": (50, 80),
 }
 
 
@@ -14725,11 +14745,7 @@ def check_trou_72_infill(
             value=float(infill_percent), limit=float(rec_max),
         ))
     else:
-        vs.append(Violation(
-            "TROU-72", Severity.INFO,
-            f"Infill {infill_percent}% for '{part_type}' — optimal range [{rec_min}-{rec_max}%].",
-            value=float(infill_percent), limit=float(rec_min),
-        ))
+        pass  # infill in optimal range — no violation needed
     
     return vs
 
@@ -15949,12 +15965,21 @@ def test_block9():
     test("Gear low infill",
          check_trou_72_infill("gear", 30),
          Severity.WARNING)
-    test("Gear proper infill",
-         check_trou_72_infill("gear", 100),
-         Severity.INFO)
-    test("Figurine low infill",
-         check_trou_72_infill("figurine", 15),
-         Severity.INFO)
+    # Gear at 100% and figurine at 15% are in optimal range → no violations
+    v_gear_ok = check_trou_72_infill("gear", 100)
+    if len(v_gear_ok) == 0:
+        print(f"  ✓ Gear proper infill: no violation (in optimal range)")
+        passed += 1
+    else:
+        print(f"  ✗ Gear proper infill: expected empty, got {len(v_gear_ok)}")
+        failed += 1
+    v_fig_ok = check_trou_72_infill("figurine", 15)
+    if len(v_fig_ok) == 0:
+        print(f"  ✓ Figurine optimal infill: no violation (in optimal range)")
+        passed += 1
+    else:
+        print(f"  ✗ Figurine optimal infill: expected empty, got {len(v_fig_ok)}")
+        failed += 1
     
     print(f"\n{'=' * 70}")
     print(f"RESULTS: {passed}/{passed + failed} passed")
