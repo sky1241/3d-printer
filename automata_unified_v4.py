@@ -4763,13 +4763,14 @@ def generate_figurine_nodding_bird(chassis_config):
         tail.apply_translation([cx - 16, cy - 0.5, base_z + 13])
         parts["tail"] = tail
     
-    # Pattes — 2 cylindres courts (Ø3, h=base_z)
+    # Pattes — short pedestals on top of chassis (don't go through mechanism)
+    leg_h = 12  # short support legs
     for side, sy in [("left", -1), ("right", 1)]:
-        leg = trimesh.creation.cylinder(radius=1.5, height=base_z + 2, sections=8)
-        leg.apply_translation([cx, cy + sy * 5, (base_z + 2) / 2 - 1])
-        # Petit pied plat
+        leg = trimesh.creation.cylinder(radius=1.5, height=leg_h, sections=8)
+        leg.apply_translation([cx, cy + sy * 5, base_z - leg_h / 2])
+        # Petit pied plat on chassis top
         foot = trimesh.creation.box(extents=[4, 3, 1.5])
-        foot.apply_translation([cx + 1, cy + sy * 5, 0.75])
+        foot.apply_translation([cx + 1, cy + sy * 5, base_z - leg_h + 0.75])
         parts[f"leg_{side}"] = trimesh.util.concatenate([leg, foot])
     
     return parts
@@ -4829,10 +4830,11 @@ def generate_figurine_flapping_bird(chassis_config):
         tail.apply_translation([cx, cy - 8, base_z + 10])
         parts["tail"] = tail
     
-    # Pattes
+    # Pattes — short pedestals on top of chassis
+    leg_h = 12
     for side, sx in [("left", -1), ("right", 1)]:
-        leg = trimesh.creation.cylinder(radius=1.5, height=base_z + 4, sections=8)
-        leg.apply_translation([cx + sx * 4, cy - 2, (base_z + 4) / 2 - 2])
+        leg = trimesh.creation.cylinder(radius=1.5, height=leg_h, sections=8)
+        leg.apply_translation([cx + sx * 4, cy - 2, base_z - leg_h / 2])
         parts[f"leg_{side}"] = leg
     
     return parts
@@ -5259,8 +5261,9 @@ def generate_figurine_fish(chassis_config):
     parts["dorsal_fin"] = dorsal
     
     # Support — petit cylindre pour poser le poisson
-    stand = trimesh.creation.cylinder(radius=2, height=base_z, sections=12)
-    stand.apply_translation([cx, cy, base_z / 2])
+    stand_h = 12  # short support above chassis
+    stand = trimesh.creation.cylinder(radius=2, height=stand_h, sections=12)
+    stand.apply_translation([cx, cy, base_z - stand_h / 2])
     parts["stand"] = stand
     
     return parts
