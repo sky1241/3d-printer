@@ -3465,6 +3465,12 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         degen = int(np.sum(mesh.area_faces < 1e-10))
         if degen > 0:
             violations.append(f"MESH-DEGEN: {name} {degen} degenerate faces")
+        # Min feature size: smallest bounding box dimension ≥ 1.2mm (FDM nozzle ~0.4mm, 3 walls)
+        if len(mesh.faces) >= 4:
+            dims = mesh.bounds[1] - mesh.bounds[0]
+            min_dim = float(np.min(dims))
+            if min_dim < 1.2:
+                violations.append(f"FEAT-SMALL: {name} min_dim={min_dim:.1f}mm < 1.2mm")
 
     # ── SPATIAL COHERENCE ──
     shaft = parts.get('camshaft')
@@ -5284,7 +5290,7 @@ def generate_figurine_rocking_horse(chassis_config):
         # Arc approximé par un cylindre aplati couché
         rocker = trimesh.creation.cylinder(radius=3, height=2, sections=16)
         # Aplatir pour faire un arc
-        rocker.vertices[:, 2] *= 0.3  # flatten Z
+        rocker.vertices[:, 2] *= 0.7  # flatten Z → ~1.4mm min (FDM printable)
         R_r = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
         rocker.apply_transform(R_r)
         rocker.apply_translation([cx + sx, cy, base_z - 1])
@@ -5409,7 +5415,7 @@ def generate_figurine_drummer(chassis_config):
     
     # Baguettes — cylindres fins dans les mains
     for side, sx, angle in [("left", -5, 60), ("right", 5, -30)]:
-        stick = trimesh.creation.cylinder(radius=0.5, height=12, sections=6)
+        stick = trimesh.creation.cylinder(radius=0.75, height=12, sections=8)
         R_s = trimesh.transformations.rotation_matrix(np.radians(angle), [1, 0, 0])
         stick.apply_transform(R_s)
         stick.apply_translation([cx + sx, cy + np.sin(np.radians(angle)) * 8, base_z + 16])
@@ -6894,10 +6900,24 @@ class AutomataGenerator:
                 json.dump(orientations, f, indent=2)
             print(f"  ✓ print_orientations.json ({len(orientations)} parts optimized)")
 
+        export_errors = []
         for name, mesh in self.all_parts.items():
             if mesh and len(mesh.vertices) > 0:
-                mesh.export(os.path.join(parts_dir, f"{name}.stl"))
-                print(f"  ✓ {name}.stl")
+                stl_path = os.path.join(parts_dir, f"{name}.stl")
+                mesh.export(stl_path)
+                # Validate: file exists and non-empty
+                if not os.path.isfile(stl_path):
+                    export_errors.append(f"{name}.stl: file not created")
+                elif os.path.getsize(stl_path) < 84:  # min STL = 80 header + 4 bytes
+                    export_errors.append(f"{name}.stl: {os.path.getsize(stl_path)} bytes (corrupt)")
+                else:
+                    print(f"  ✓ {name}.stl")
+
+        if export_errors:
+            print(f"  ⚠ {len(export_errors)} STL export errors:")
+            for e in export_errors:
+                print(f"    {e}")
+        self.export_errors = export_errors
 
         all_meshes = [m for m in self.all_parts.values() if m and len(m.vertices) > 0]
         if all_meshes:
