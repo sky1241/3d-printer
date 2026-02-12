@@ -2490,9 +2490,9 @@ def make_m3_insert_pocket_2d(center_x: float, center_y: float,
 def make_snap_hook_3d(platform_width: float,
                        hook_side: str = "top",
                        cfg: 'JointConfig' = None) -> trimesh.Trimesh:
-    """Create a cantilever snap-fit hook for figurine attachment.
+    """UNUSED — kept for reference. Pushrod+socket system replaces snap-fit.
     
-    Returns a mesh to UNION with the follower platform.
+    Create a cantilever snap-fit hook for figurine attachment.
     The matching pocket (on figurine base) should use make_snap_pocket_3d.
     
     Geometry: vertical cantilever arm with angled lip at tip.
