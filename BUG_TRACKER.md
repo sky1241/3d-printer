@@ -75,11 +75,11 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 
 | ID | Description | Impact | Effort |
 |----|-------------|--------|--------|
-| P6 | ~~Brancher 80 checks restants~~ → 26/94 branchés | ✅ DONE | `83e1c68` |
-| P7 | Brackets de pivot pour les leviers | Les leviers flottent sans support | Moyen |
-| P8 | Validation follower reach (follower touche la came) | Fonctionnel | Facile |
+| P6 | ~~Brancher 80 checks restants~~ → 37/94 branchés | ✅ DONE | `83e1c68` `3092d45` `c532b2c` |
+| P7 | ~~Brackets de pivot pour les leviers~~ | ✅ DONE | `4e74d0a` |
+| P8 | ~~Validation follower reach~~ — 3 gaps détectés (warnings) | ✅ DONE | `c532b2c` |
 | P9 | Crank handle clearance check | Sécurité manivelle | Facile |
-| P10 | Watertight mesh check (manifold) | Qualité STL | Facile |
+| P10 | ~~Watertight mesh check~~ — tous déjà watertight | ✅ DONE | vérifié |
 | P11 | Min wall thickness sur mesh réel (ray-based) | Print quality | Difficile |
 | P12 | Lever pivot pin + collar meshes | Assemblage complet | Moyen |
 
@@ -94,6 +94,8 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 | P6-FIGCLEAR | Figure↔mech interference: exclure levers+followers | Fixé | `83e1c68` |
 | P6-SHAFT | Shaft deflection seuil toy 0.2→0.3mm | Ajusté | `83e1c68` |
 | P6-HERTZ | PV/Hertz contact force 2N→1N (réaliste PLA léger) | Ajusté | `83e1c68` |
+| P7-BRK | Leviers sans support physique → U-brackets ajoutés | Fixé | `4e74d0a` |
+| P8-REACH | Follower guides trop hauts (3 cames dir.) → warning | Détecté | `c532b2c` |
 
 ---
 
@@ -105,7 +107,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ├─────────────────────────────────┼──────────────────┤
 │ test_master --test              │ ✅ ALL PASS      │
 │ 94 check_* fonctions définies   │ ✅ 94 trouvées   │
-│ checks branchés sur réel        │ 37/94 (39%)      │
+│ checks branchés sur réel        │ 37/94 (39%) + P8 │
 │ checks dans run_all_constraints │ 48/94 (51%)      │
 │ dead code (jamais appelé)       │ 46/94 (49%)      │
 │ validate_assembly (Step 8)      │ ✅ 9/9 presets   │
@@ -139,7 +141,8 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ```
 9/9 presets : 0 erreurs, 0 assembly violations
 188 parts total, 13 leviers
-37/94 checks branchés sur données réelles (39%)
-~30 warnings (design, pas bugs)
+37/94 checks branchés + P8 inline (39%)
+13 lever brackets generated
+~36 warnings (design, pas bugs)
 ALL PASS ✅
 ```

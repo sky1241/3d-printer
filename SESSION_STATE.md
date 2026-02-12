@@ -166,11 +166,11 @@ Ratios range from 1:1.2 to 1:3.5.
 Only 13/94 checks run on real geometry. Remaining checks in run_all_constraints need
 to be connected to post-generate() data.
 
-### P7 — Lever pivot brackets (FUTURE)
-Levers need physical mounting brackets on chassis walls for the pivot pins.
+### P7 — Lever pivot brackets ✅ DONE (commit 4e74d0a)
+13 U-brackets for 13 levers. create_lever_bracket() with collision skip pairs.
 
-### P8 — Follower reach validation (FUTURE)
-Verify that follower guide actually reaches the cam surface.
+### P8 — Follower reach validation ✅ DONE (commit c532b2c)
+Inline FOLLOWER_REACH_GAP check. 3 gaps detected as warnings.
 
 ---
 
