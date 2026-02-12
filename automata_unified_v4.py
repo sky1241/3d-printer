@@ -1093,8 +1093,13 @@ def auto_design_cam(
     phi_max_deg=30.0, eps=0.0, thickness=5.0,
     bore_diameter=4.0,
     pivot_world=None, arm_length=None,
+    Rb_max=None,
 ) -> CamDesignResult:
-    """Dimensionne et génère automatiquement une came."""
+    """Dimensionne et génère automatiquement une came.
+
+    Rb_max: if set, clamps base circle radius to fit inside chassis.
+            When clamped, relaxes phi_max up to 45° and reduces safety factor.
+    """
     phi_max_rad = np.radians(phi_max_deg)
 
     if follower_type == "roller":
@@ -1104,14 +1109,32 @@ def auto_design_cam(
         else:
             Rb = Rb_hint
 
+        # --- Fallback cascade when Rb grows too large ---
+        safety = 2.0
+        phi_limit = phi_max_rad
         for attempt in range(10):
             rho = curvature_radius_pitch_curve_roller(s, v, a, Rb, rf)
-            uc = check_undercut_roller(rho, rf, safety_factor=2.0)
+            uc = check_undercut_roller(rho, rf, safety_factor=safety)
             phi = pressure_angle_translating_roller(s, v, Rb, rf, eps)
             phi_max_actual = float(np.max(np.abs(phi)))
-            if uc["ok"] and phi_max_actual <= phi_max_rad:
+            if uc["ok"] and phi_max_actual <= phi_limit:
                 break
-            Rb *= 1.15
+            next_Rb = Rb * 1.15
+            if Rb_max is not None and next_Rb > Rb_max:
+                # Fallback 1: relax pressure angle to 45° (safe for PLA at low speed)
+                if phi_limit < np.radians(45.0):
+                    phi_limit = np.radians(45.0)
+                    Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
+                    Rb = max(Rb, rf + 2)
+                    continue
+                # Fallback 2: reduce safety factor
+                if safety > 1.2:
+                    safety = 1.2
+                    continue
+                # Fallback 3: hard clamp — accept what we have
+                Rb = min(Rb, Rb_max)
+                break
+            Rb = next_Rb
 
         x_p, y_p = pitch_curve_translating_roller(theta, s, Rb, rf, eps)
         x_cam, y_cam = cam_profile_translating_roller(theta, s, v, Rb, rf, eps)
@@ -1131,7 +1154,11 @@ def auto_design_cam(
             uc = check_undercut_flat_faced(s, a, Rb)
             if uc["ok"]:
                 break
-            Rb *= 1.15
+            next_Rb = Rb * 1.15
+            if Rb_max is not None and next_Rb > Rb_max:
+                Rb = min(Rb, Rb_max)
+                break
+            Rb = next_Rb
         x_cam, y_cam = cam_profile_flat_faced(theta, s, v, Rb)
         result = CamDesignResult(
             Rb=round(Rb, 2), rf=0, Rp=round(Rb, 2), eps=0,
@@ -6107,10 +6134,34 @@ class AutomataGenerator:
                 if hasattr(self.scene, '_solver_overrides'):
                     rb_hints = self.scene._solver_overrides.get('cam_Rb_hints', {})
                     rb_hint = rb_hints.get(cam.name, None)
+                # Compute max cam radius that fits inside chassis
+                # Total cam radius ≈ Rb + max(s) + rf, must fit in min(width,depth)/2
+                max_amp = float(np.max(np.abs(s_arr)))
+                R_available = min(chassis_config.width, chassis_config.depth) / 2 - chassis_config.wall_thickness - 2.0
+                Rb_max = max(R_available - max_amp - 3.0, 8.0)  # rf=3.0, min Rb=8mm
+
+                # If amplitude alone exceeds available space, scale it down
+                # (lever mechanism implied — cam delivers reduced stroke, lever amplifies)
+                amp_scale = 1.0
+                min_Rb = 5.0  # absolute minimum viable (rf + 2)
+                max_cam_radius = R_available
+                if (min_Rb + max_amp + 3.0) > max_cam_radius:
+                    # Scale amplitude so cam fits: Rb_min + amp_scaled + rf ≤ R_available
+                    max_amp_allowed = max_cam_radius - min_Rb - 3.0
+                    if max_amp_allowed > 0 and max_amp > 0:
+                        amp_scale = max_amp_allowed / max_amp
+                        s_arr = s_arr * amp_scale
+                        v_arr = v_arr * amp_scale
+                        a_arr = a_arr * amp_scale
+                        max_amp = float(np.max(np.abs(s_arr)))
+                        Rb_max = max(R_available - max_amp - 3.0, min_Rb)
+                        print(f"  ⚠ cam_{cam.name}: amplitude scaled ×{amp_scale:.2f} (lever ratio 1:{1/amp_scale:.1f} needed)")
+
                 design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
                                           follower_type="roller", rf=3.0,
                                           Rb_hint=rb_hint,
-                                          phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0)
+                                          phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0,
+                                          Rb_max=Rb_max)
                 mesh = design.mesh
                 mesh.apply_translation([0, i*8.0, cz - cam_thickness/2])
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
@@ -6121,6 +6172,8 @@ class AutomataGenerator:
                     'Rb_mm': design.Rb,
                     'phi_max_deg': design.phi_max_deg,
                     'undercut_ok': design.undercut_ok,
+                    'amp_scale': amp_scale,
+                    'lever_needed': amp_scale < 1.0,
                 }
                 print(f"  · cam_{cam.name}: Rb={design.Rb}mm, φ_max={design.phi_max_deg}°, "
                       f"undercut={'OK' if design.undercut_ok else 'FAIL'}, {len(mesh.faces)}f")
