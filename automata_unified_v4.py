@@ -1713,17 +1713,25 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
     if bearing_positions:
         for py, pz in bearing_positions:
             br = config.camshaft_diameter/2 + config.bearing_clearance
-            if 2 * br >= t * 0.95:
-                # Bore wider than wall → U-slot (open cradle from top)
-                slot_r = br + 0.1
-                bore_circle = Point(t/2, pz).buffer(slot_r, resolution=24)
-                slot_rect = shapely_box(t/2 - slot_r, pz, t/2 + slot_r, h + 1)
-                u_slot = bore_circle.union(slot_rect)
-                wall = wall.difference(u_slot)
+            # Always use a proper through-bore with a local boss for reinforcement
+            min_wall = 1.5  # ≥3 perimeters × 0.4mm nozzle
+            boss_r = br + min_wall
+            if 2 * boss_r > t:
+                # Bore needs more material than wall thickness provides.
+                # Add a local boss that only extends OUTWARD (x<0 in profile)
+                # to avoid collisions with internal parts (follower guides etc.)
+                boss = Point(t/2, pz).buffer(boss_r, resolution=24)
+                # Clip: allow outward extension (x < 0) but not past inside face (x > t)
+                clip = shapely_box(-boss_r * 2, pz - boss_r * 2, t, pz + boss_r * 2)
+                boss = boss.intersection(clip)
+                wall = wall.union(boss)
                 if not wall.is_valid:
                     wall = wall.buffer(0)
-            else:
-                wall = wall.difference(Point(t/2, pz).buffer(br, resolution=24))
+            # Cut the through-bore (always a clean circle)
+            bore = Point(t/2, pz).buffer(br, resolution=24)
+            wall = wall.difference(bore)
+            if not wall.is_valid:
+                wall = wall.buffer(0)
     if h > 40:
         cutout = shapely_box(t*0.3, h*0.3, t*0.7, h*0.7).buffer(2).buffer(-2)
         wall = wall.difference(cutout)
@@ -7673,12 +7681,18 @@ class AutomataGenerator:
                 # Lever geometry
                 input_arm = 12.0   # mm from pivot to follower contact
                 output_arm = input_arm * lever_ratio
-                pivot_z = cam_top_z + input_arm + 3  # 3mm gap above cam
+                arm_thick = 3.0    # lever arm XZ thickness (also used below)
+                # Position pivot so the lever's rounded input tip (radius=arm_thick/2)
+                # just contacts the cam top with 0.2mm FDM clearance.
+                # Lever bottom = pivot_z - input_arm - arm_thick/2
+                # We want: lever_bottom = cam_top_z + 0.2 (contact clearance)
+                fdm_clearance = 0.2  # mm — just enough to not bind, gravity closes it
+                pivot_z = cam_top_z + input_arm + arm_thick / 2 + fdm_clearance
                 pivot_pos = [0, cam_y, pivot_z]
                 
                 lever_mesh = create_lever_arm(
                     pivot_pos, input_arm, output_arm,
-                    arm_width=4.0, arm_thickness=3.0,
+                    arm_width=4.0, arm_thickness=arm_thick,
                     pivot_bore_d=chassis_config.camshaft_diameter + 0.5)
                 
                 self.all_parts[f"lever_{cam.name}"] = lever_mesh
