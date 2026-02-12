@@ -4299,6 +4299,12 @@ def run_real_constraint_checks(gen, chassis_config):
         infill = 40 if ptype == 'cam' else 20
         violations.extend(check_trou_72_infill(ptype, infill))
 
+    # P14: ray-based minimum wall thickness
+    try:
+        violations.extend(check_min_wall_thickness(gen.all_parts, min_wall_mm=1.2, n_samples=80))
+    except Exception:
+        pass  # rtree may not be available
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
@@ -14434,6 +14440,49 @@ def check_trou_71_shaft_deflection(
 # ═══════════════════════════════════════════════════════════════
 # TROU 72 — Infill recommendation by part type
 # ═══════════════════════════════════════════════════════════════
+
+def check_min_wall_thickness(parts: Dict[str, 'trimesh.Trimesh'],
+                             min_wall_mm: float = 1.2,
+                             n_samples: int = 100) -> List[Violation]:
+    """Ray-based minimum wall thickness check.
+    For each part, cast inward rays from surface samples.
+    Flags parts where wall < min_wall_mm (FDM minimum ~1.2mm).
+    """
+    violations = []
+    for pname, pmesh in parts.items():
+        if not hasattr(pmesh, 'faces') or len(pmesh.faces) < 4:
+            continue
+        try:
+            n = min(n_samples, len(pmesh.faces))
+            face_idx = np.random.default_rng(42).choice(len(pmesh.faces), n, replace=False)
+            centers = pmesh.triangles_center[face_idx]
+            normals = -pmesh.face_normals[face_idx]  # inward
+            origins = centers + normals * 0.05
+            locs, idx_ray, _ = pmesh.ray.intersects_location(
+                ray_origins=origins, ray_directions=normals)
+            if len(locs) == 0:
+                continue
+            dists = np.linalg.norm(locs - origins[idx_ray], axis=1)
+            valid = dists > 0.1
+            if not np.any(valid):
+                continue
+            min_w = float(dists[valid].min())
+            thin_pct = float(np.sum(dists[valid] < min_wall_mm) / np.sum(valid) * 100)
+            if min_w < min_wall_mm:
+                violations.append(Violation(
+                    code="MIN_WALL_THICKNESS",
+                    trou=0,
+                    severity=Severity.WARNING,  # informational — thin at bores is expected FDM
+                    message=f"{pname}: épaisseur min {min_w:.2f}mm < {min_wall_mm}mm "
+                            f"({thin_pct:.0f}% des rayons sous le seuil).",
+                    solution=f"Épaissir {pname} ou déplacer les alésages. "
+                             f"FDM min = {min_wall_mm}mm pour résistance mécanique.",
+                    context={"part": pname, "min_wall_mm": min_w, "thin_pct": thin_pct}
+                ))
+        except Exception:
+            continue  # ray cast can fail on degenerate meshes
+    return violations
+
 
 def check_trou_72_infill(
     part_type: str,
