@@ -242,16 +242,27 @@ def _extrude_polygon_fallback(poly: ShapelyPolygon, height: float) -> trimesh.Tr
     return mesh
 
 
-def extrude_polygon_safe(poly, height: float) -> trimesh.Trimesh:
+def extrude_polygon_safe(poly, height: float, **kwargs) -> trimesh.Trimesh:
     """Wrapper around trimesh extrusion with fallback when `triangle` isn't installed."""
     if _TRIMESH_EXTRUDE_POLYGON is None:
-        return _extrude_polygon_fallback(poly, float(height))
-    try:
-        return _TRIMESH_EXTRUDE_POLYGON(poly, float(height))
-    except ModuleNotFoundError as e:
-        if 'triangle' in str(e):
-            return _extrude_polygon_fallback(poly, float(height))
-        raise
+        mesh = _extrude_polygon_fallback(poly, float(height))
+    else:
+        try:
+            mesh = _TRIMESH_EXTRUDE_POLYGON(poly, float(height), **kwargs)
+        except (ModuleNotFoundError, TypeError) as e:
+            if 'triangle' in str(e):
+                mesh = _extrude_polygon_fallback(poly, float(height))
+            elif 'transform' in str(e):
+                # Older trimesh without transform param — apply manually
+                mesh = _TRIMESH_EXTRUDE_POLYGON(poly, float(height))
+                if 'transform' in kwargs and kwargs['transform'] is not None:
+                    mesh.apply_transform(kwargs['transform'])
+            else:
+                raise
+    # Apply transform if fallback path was used and transform was requested
+    if _TRIMESH_EXTRUDE_POLYGON is None and 'transform' in kwargs and kwargs['transform'] is not None:
+        mesh.apply_transform(kwargs['transform'])
+    return mesh
 
 
 # Monkeypatch trimesh: keep the rest of the file unchanged.
@@ -1568,8 +1579,6 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
         for py, pz in bearing_positions:
             br = config.camshaft_diameter/2 + config.bearing_clearance
             if 2 * br >= t * 0.95:
-                # Bore wider than wall → can't cut in 2D without splitting
-                # Store as metadata; physical bore is through-hole post-printed or designed as open cradle
                 bore_metadata.append({'y': py, 'z': pz, 'radius': br})
             else:
                 wall = wall.difference(Point(t/2, pz).buffer(br, resolution=24))
@@ -1577,16 +1586,14 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
         cutout = shapely_box(t*0.3, h*0.3, t*0.7, h*0.7).buffer(2).buffer(-2)
         wall = wall.difference(cutout)
     if not wall.is_valid: wall = wall.buffer(0)
-    mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d-10)
-    # FIX SPATIAL-3: rotate +π/2 around X to put height on Z axis
-    # Before: X=thickness, Y=height, Z=depth(extrusion)
-    # After rotation +π/2 X: X=thickness, Y=-depth, Z=height
-    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
-    if side == "left": mesh.apply_translation([-config.width/2, d/2-5, config.plate_thickness])
-    else: mesh.apply_translation([config.width/2-t, d/2-5, config.plate_thickness])
+    # Use transform= param: rotate +π/2 X then translate in one matrix
+    x0 = -config.width/2 if side == "left" else config.width/2 - t
+    R = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+    T = trimesh.transformations.translation_matrix([x0, d/2-5, config.plate_thickness])
+    M = trimesh.transformations.concatenate_matrices(T, R)
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d-10, transform=M)
     if bore_metadata:
         mesh.metadata['bore_positions'] = bore_metadata
-    return mesh
     return mesh
 
 
@@ -1698,11 +1705,11 @@ def generate_chassis(config, cam_count=1, follower_guides=None):
 
 def _make_shaft_and_drive(config, cam_count, cz, parts):
     """Shared: camshaft + drive (crank or motor) + collars."""
-    shaft = trimesh.creation.cylinder(radius=config.camshaft_diameter/2,
-                                       height=config.camshaft_length, sections=24)
-    # FIX SPATIAL-1: rotate FIRST (align cylinder along Y), then translate to height
-    shaft.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
-    shaft.apply_translation([0, 0, cz])
+    half_len = config.camshaft_length / 2
+    shaft = trimesh.creation.cylinder(
+        radius=config.camshaft_diameter / 2,
+        segment=np.array([[0.0, -half_len, cz], [0.0, half_len, cz]]),
+        sections=24)
     parts["camshaft"] = shaft
     if config.drive_mode == 'crank':
         parts["crank_handle"] = create_crank_handle(config, z_position=cz)
@@ -2674,15 +2681,12 @@ def create_bearing_wall_with_joints(config: 'ChassisConfig',
     
     if not wall.is_valid:
         wall = wall.buffer(0)
-    mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d - 10)
-    
-    # FIX SPATIAL-3: rotate +π/2 around X to put height on Z axis
-    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
-    
-    if side == "left":
-        mesh.apply_translation([-config.width / 2, d / 2 - 5, config.plate_thickness])
-    else:
-        mesh.apply_translation([config.width / 2 - t, d / 2 - 5, config.plate_thickness])
+    # Use transform= param: rotate +π/2 X then translate in one matrix
+    x0 = -config.width / 2 if side == "left" else config.width / 2 - t
+    R = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
+    T = trimesh.transformations.translation_matrix([x0, d / 2 - 5, config.plate_thickness])
+    M = trimesh.transformations.concatenate_matrices(T, R)
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d - 10, transform=M)
     
     mesh.metadata['joint_type'] = 'bearing_bore'
     mesh.metadata['chamfer'] = joint_cfg.chamfer_depth
