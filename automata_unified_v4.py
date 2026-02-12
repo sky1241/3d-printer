@@ -3975,6 +3975,82 @@ def run_real_constraint_checks(gen, chassis_config):
             num_cams=len(gen.cams),
         ))
 
+    # trou15: assembly order
+    violations.extend(check_trou15_assembly_order(
+        has_captive_parts=False,
+        shaft_removable=True,
+        num_press_fits=len(gen.cams),
+    ))
+
+    # trou20: power supply
+    if chassis_config.drive_mode == 'motor':
+        violations.extend(check_trou20_power_supply(
+            motor=MotorSpec(),
+            power_source='battery_aa',
+            num_batteries=4,
+            desired_runtime_hours=2.0,
+        ))
+
+    # trou24: calibration recommendations
+    violations.extend(check_trou24_calibration(
+        has_test_print_stl=False,
+        shaft_diameter_mm=chassis_config.camshaft_diameter,
+        cam_uses_fine_profile=True,
+    ))
+
+    # trou25: modularity / snap-fit
+    violations.extend(check_trou25_modularity(
+        num_unique_parts=len(gen.all_parts),
+        has_snap_fits=False,
+        assembly_method='screws',
+    ))
+
+    # trou26: general safety
+    violations.extend(check_trou26_safety(
+        target_audience='child_6plus',
+        smallest_part_mm=3.0,  # smallest feature
+        has_exposed_gears=chassis_config.drive_mode == 'motor',
+        has_sharp_edges=False,
+        battery_accessible=chassis_config.drive_mode == 'motor',
+    ))
+
+    # trou27: BOM quality
+    stl_names = [f"{p}.stl" for p in gen.all_parts.keys()]
+    bom_entries = [{'name': p, 'quantity': 1, 'source': 'printed'} for p in gen.all_parts.keys()]
+    violations.extend(check_trou27_bom_quality(
+        stl_files=stl_names,
+        bom_entries=bom_entries,
+        has_assembly_instructions=True,
+        has_print_settings=True,
+    ))
+
+    # physics_e1: friction/wear at cam contacts
+    cam_friction_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        cam_friction_data.append({
+            'name': cam.name,
+            'Rb_mm': design.Rb_mm if design else 15.0,
+            'rf_mm': cd.get('rf_mm', 3.0),
+            'contact_force_N': 1.0,
+            'material_pair': 'PLA_PLA',
+        })
+    cam_rpm = gen.scene.cycle_rpm if hasattr(gen.scene, 'cycle_rpm') else 30
+    violations.extend(check_physics_e1_friction_wear(cam_friction_data, cam_rpm, lubricated=False))
+
+    # physics_e8: follower jump check
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        max_amp = max(abs(seg.height) for seg in cam.segments) if cam.segments else 5.0
+        violations.extend(check_physics_e8_follower_jump(
+            spring_rate_N_per_mm=0.5,
+            amplitude_mm=max_amp * cd.get('amp_scale', 1.0),
+            preload_N=0.2,
+            follower_mass_kg=0.005,
+            operating_rpm=cam_rpm,
+        ))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
