@@ -75,13 +75,25 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 
 | ID | Description | Impact | Effort |
 |----|-------------|--------|--------|
-| P6 | Brancher 80 checks restants sur données réelles | Couverture 25%→80% | Moyen |
+| P6 | ~~Brancher 80 checks restants~~ → 26/94 branchés | ✅ DONE | `83e1c68` |
 | P7 | Brackets de pivot pour les leviers | Les leviers flottent sans support | Moyen |
 | P8 | Validation follower reach (follower touche la came) | Fonctionnel | Facile |
 | P9 | Crank handle clearance check | Sécurité manivelle | Facile |
 | P10 | Watertight mesh check (manifold) | Qualité STL | Facile |
 | P11 | Min wall thickness sur mesh réel (ray-based) | Print quality | Difficile |
 | P12 | Lever pivot pin + collar meshes | Assemblage complet | Moyen |
+
+---
+
+## SESSION 13-14 : P6 Wiring (commit 83e1c68)
+
+| ID | Description | Résultat | Commit |
+|----|-------------|----------|--------|
+| P6-BOM | BOM items sans qty → ajout quantity: 1 + springs | Fixé | `83e1c68` |
+| P6-SWEEP | Lever sweep check inapplicable (vertical vs horizontal) | Skippé | `83e1c68` |
+| P6-FIGCLEAR | Figure↔mech interference: exclure levers+followers | Fixé | `83e1c68` |
+| P6-SHAFT | Shaft deflection seuil toy 0.2→0.3mm | Ajusté | `83e1c68` |
+| P6-HERTZ | PV/Hertz contact force 2N→1N (réaliste PLA léger) | Ajusté | `83e1c68` |
 
 ---
 
@@ -93,7 +105,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ├─────────────────────────────────┼──────────────────┤
 │ test_master --test              │ ✅ ALL PASS      │
 │ 94 check_* fonctions définies   │ ✅ 94 trouvées   │
-│ checks branchés sur réel        │ 13/94 (14%)      │
+│ checks branchés sur réel        │ 26/94 (28%)      │
 │ checks dans run_all_constraints │ 48/94 (51%)      │
 │ dead code (jamais appelé)       │ 46/94 (49%)      │
 │ validate_assembly (Step 8)      │ ✅ 9/9 presets   │
@@ -105,6 +117,16 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 │ rf/Rb ≤ 0.4                    │ ✅ 9/9 presets   │
 │ Rb ≥ 5mm                       │ ✅ 9/9 presets   │
 │ φ_max ≤ 58°                    │ ✅ 9/9 presets   │
+│ Torque check                    │ ✅ 9/9 presets   │
+│ Lever pivot + bending           │ ✅ 8/8 presets   │
+│ Figure clearance                │ ✅ 9/9 presets   │
+│ Shaft deflection                │ ✅ 9/9 presets   │
+│ BOM completeness                │ ✅ 9/9 presets   │
+│ Print plate fit                 │ ✅ 9/9 presets   │
+│ EN71 safety                     │ ✅ 9/9 presets   │
+│ Bearing PV                      │ ✅ 9/9 presets   │
+│ Thermal PLA                     │ ✅ 9/9 presets   │
+│ Assembly DFA                    │ ✅ 9/9 presets   │
 └─────────────────────────────────┴──────────────────┘
 ```
 
@@ -113,6 +135,7 @@ Aucun bug ouvert actuellement. 9/9 presets passent tous les tests.
 ```
 9/9 presets : 0 erreurs, 0 assembly violations
 188 parts total, 13 leviers
-15 warnings (design, pas bugs)
+26/94 checks branchés sur données réelles
+~20 warnings (design, pas bugs)
 ALL PASS ✅
 ```

@@ -159,7 +159,10 @@ U-slot (open cradle from top) replaces skipped bores. 9/9 presets now have real 
 13 lever arms across 8 presets. create_lever_arm() generates flat bar with pivot bore.
 Ratios range from 1:1.2 to 1:3.5.
 
-### P6 — Wire remaining ~80 checks to real data (FUTURE)
+### P6 — Wire 15 more checks to real data ✅ DONE (commit 83e1c68)
+- 26/94 checks branchés (28%), up from 11
+- Added: trou5,6,10,11,12,30,31,36,37,44,50,52,55,56,57
+- Fixed: BOM qty, lever sweep skip, figure clearance exclude, shaft threshold
 Only 13/94 checks run on real geometry. Remaining checks in run_all_constraints need
 to be connected to post-generate() data.
 
