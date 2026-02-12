@@ -1506,6 +1506,20 @@ class ChassisConfig:
         self.camshaft_length = (self.num_cams * self.cam_spacing +
                                  2 * self.plate_thickness + 2 * self.bearing_clearance + extra)
 
+    @property
+    def shaft_center_z(self) -> float:
+        """Z height of the camshaft center, matching generate_chassis_*() formulas."""
+        t = self.plate_thickness
+        if self.chassis_type == 'frame':
+            return self.total_height * 0.4
+        elif self.chassis_type == 'central':
+            pillar_h = self.total_height - t
+            return pillar_h * 0.5 + t
+        elif self.chassis_type == 'flat':
+            return t + 15.0 * 0.6
+        else:  # 'box' and default
+            return self.total_height * 0.5
+
 
 def create_base_plate(config):
     w, d, t = config.width, config.depth, config.plate_thickness
@@ -6049,6 +6063,14 @@ class AutomataGenerator:
 
         # Step 5: Geometry
         print("[5/7] Géométrie...")
+        # Create chassis config FIRST — needed for cam/follower Z positioning
+        chassis_config = ChassisConfig(width=80, depth=60, total_height=70, num_cams=len(self.cams),
+                                      drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
+                                      chassis_type=getattr(self.scene, '_chassis_type', 'box'))
+        chassis_config.__post_init__()  # apply crank overrides if needed
+        cz = chassis_config.shaft_center_z  # shaft height for cam/follower alignment
+        cam_thickness = 5.0
+
         for i, cam in enumerate(self.cams):
             n_pts = 720
             theta_rad = np.linspace(0, 2*np.pi, n_pts, endpoint=False)
@@ -6066,9 +6088,9 @@ class AutomataGenerator:
                 design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
                                           follower_type="roller", rf=3.0,
                                           Rb_hint=rb_hint,
-                                          phi_max_deg=30.0, thickness=5.0, bore_diameter=4.0)
+                                          phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0)
                 mesh = design.mesh
-                mesh.apply_translation([0, i*8.0, 0])
+                mesh.apply_translation([0, i*8.0, cz - cam_thickness/2])
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
                 # Store actual Rb for constraint engine
                 if not hasattr(self, '_cam_designs'):
@@ -6083,19 +6105,17 @@ class AutomataGenerator:
             except Exception as e:
                 print(f"  ⚠ cam_{cam.name}: fallback ({e})")
                 mesh = create_cam_disk_placeholder(cam)
-                mesh.apply_translation([0, i*8.0, 0])
+                mesh.apply_translation([0, i*8.0, cz - cam_thickness/2])
                 self.cam_meshes[f"cam_{cam.name}"] = mesh
 
-        chassis_config = ChassisConfig(width=80, depth=60, total_height=70, num_cams=len(self.cams),
-                                      drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
-                                      chassis_type=getattr(self.scene, '_chassis_type', 'box'))
-        chassis_config.__post_init__()  # apply crank overrides if needed
         guides = []
         for i, track in enumerate(self.scene.tracks):
             amp = max((p.amplitude for p in track.primitives if p.kind != "PAUSE"), default=10)
             fdir = getattr(track, 'follower_direction', 'vertical')
+            # Follower just above the cam: Z = shaft_center + max_cam_radius + small gap
+            follower_z = cz + amp + 10  # above cam top
             guides.append(FollowerGuide(
-                position=(i*20 - (len(self.scene.tracks)-1)*10, 20, 50), stroke_mm=amp,
+                position=(i*20 - (len(self.scene.tracks)-1)*10, 20, follower_z), stroke_mm=amp,
                 direction=fdir))
         self.chassis_parts = generate_chassis(chassis_config, len(self.cams), guides)
         print(f"  · Châssis: {len(self.chassis_parts)} pièces")
