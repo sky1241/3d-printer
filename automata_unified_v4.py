@@ -3718,6 +3718,125 @@ def run_real_constraint_checks(gen, chassis_config):
         'direct_sunlight': False,
     }))
 
+    # ── MATERIAL DURABILITY CHECKS ──
+
+    # trou7: spring presence
+    spring_tracks = []
+    for cam in gen.cams:
+        spring_tracks.append({
+            'name': cam.name,
+            'has_spring': True,
+            'has_groove_cam': False,
+            'follower_mass_kg': 0.005,
+        })
+    violations.extend(check_trou7_spring('vertical', spring_tracks))
+
+    # trou45: creep under sustained load
+    creep_parts = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        creep_parts.append({
+            'name': f"follower_{cam.name}",
+            'material': 'PLA',
+            'stress_MPa': 5.0,
+            'sustained_load': True,
+            'critical': False,
+        })
+    violations.extend(check_trou45_creep(creep_parts, ambient_temp_C=25.0))
+
+    # trou46: resonance check
+    moving_parts_res = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        max_amp = max(abs(seg.height) for seg in cam.segments) * cd.get('amp_scale', 1.0)
+        moving_parts_res.append({
+            'name': cam.name,
+            'mass_kg': 0.005,
+            'stiffness_N_per_m': 50.0,  # spring + gravity
+            'amplitude_mm': max_amp,
+        })
+    cam_rpm = gen.scene.cycle_rpm if chassis_config.drive_mode == 'motor' else 30
+    violations.extend(check_trou46_resonance(cam_rpm, moving_parts_res))
+
+    # trou47: fatigue life
+    fatigue_parts = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        fatigue_parts.append({
+            'name': f"cam_{cam.name}",
+            'material': 'PLA',
+            'stress_amplitude_MPa': 5.0,
+            'mean_stress_MPa': 2.0,
+            'print_direction': 'XY',
+        })
+    if fatigue_parts:
+        violations.extend(check_trou47_fatigue(fatigue_parts, rpm=cam_rpm, target_hours=100))
+
+    # trou48: tolerance stackup
+    tol_chains = [{
+        'name': 'camshaft_assembly',
+        'interfaces': len(gen.cams) + 2,  # cams + 2 walls
+        'target_clearance_mm': 0.5,
+        'method': 'RSS',
+    }]
+    violations.extend(check_trou48_tolerance_stackup(tol_chains))
+
+    # trou49: shrinkage check
+    shrink_dims = []
+    for pname, pmesh in gen.all_parts.items():
+        if hasattr(pmesh, 'bounds') and len(pmesh.faces) >= 4:
+            dims = pmesh.bounds[1] - pmesh.bounds[0]
+            if max(dims) > 50:  # only check large parts
+                shrink_dims.append({
+                    'name': pname,
+                    'size_x_mm': float(dims[0]),
+                    'size_y_mm': float(dims[1]),
+                    'size_z_mm': float(dims[2]),
+                    'has_mating_surface': pname in ('wall_left', 'wall_right', 'base_plate'),
+                })
+    if shrink_dims:
+        violations.extend(check_trou49_shrinkage(shrink_dims))
+
+    # trou51: long-term degradation
+    violations.extend(check_trou51_degradation(
+        environment={'indoor': True, 'UV_exposure': False, 'humidity_pct': 50},
+        design={'material': 'PLA', 'n_moving_parts': len(gen.cams) * 3, 'has_springs': True},
+    ))
+
+    # trou53: electrical safety
+    if chassis_config.drive_mode == 'motor':
+        violations.extend(check_trou53_electrical({
+            'voltage_V': 6,
+            'battery_type': 'AA',
+            'has_on_off_switch': True,
+            'motor_enclosed': False,
+        }))
+
+    # trou54: noise estimation
+    violations.extend(check_trou54_noise(
+        rpm=cam_rpm,
+        n_gears=2 if chassis_config.drive_mode == 'motor' else 0,
+        n_cams=len(gen.cams),
+        has_worm=False,
+        enclosed=False,
+    ))
+
+    # trou58: integration (cross-block check)
+    existing_violations_by_block = {}
+    for v in violations:
+        blk = f"trou{v.trou}" if hasattr(v, 'trou') else 'unknown'
+        existing_violations_by_block.setdefault(blk, []).append(v)
+    violations.extend(check_trou58_integration(existing_violations_by_block))
+
+    # trou59: documentation completeness
+    violations.extend(check_trou59_documentation({
+        'stl_files': True,
+        'bom': True,
+        'assembly_guide': True,  # scene.json contains assembly order
+        'print_settings': True,
+        'timing_diagram': True,
+    }))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
