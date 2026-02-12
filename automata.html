@@ -1639,8 +1639,6 @@ function animate(){
       const r=realCamRadiusSTL(angle,camD);
       const wave=(r-camD.base_radius_mm)/camD.lift_mm*2-1; // normalize to -1→+1
 
-      const amp=Math.max(m.amplitude||30, 20);
-
       if(m.motion==='TRANSLATE_V'){
         mesh.position.y=orig.y + wave*amp*0.7;
       } else if(m.motion==='TRANSLATE_H'){
