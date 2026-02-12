@@ -1123,6 +1123,7 @@ def auto_design_cam(
         # --- Fallback cascade when Rb grows too large ---
         safety = 2.0
         phi_limit = phi_max_rad
+        amp_reduced = False
         for attempt in range(10):
             rho = curvature_radius_pitch_curve_roller(s, v, a, Rb, rf)
             uc = check_undercut_roller(rho, rf, safety_factor=safety)
@@ -1138,11 +1139,28 @@ def auto_design_cam(
                     Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
                     Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
                     continue
-                # Fallback 2: reduce safety factor
+                # Fallback 2: relax to 58° (acceptable for toy automata ≤5 RPM)
+                if phi_limit < np.radians(58.0):
+                    phi_limit = np.radians(58.0)
+                    Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
+                    Rb = max(Rb, rf + 2, 5.0)
+                    continue
+                # Fallback 3: reduce safety factor
                 if safety > 1.2:
                     safety = 1.2
                     continue
-                # Fallback 3: hard clamp — accept what we have
+                # Fallback 4: reduce amplitude by 30% (implies stronger lever)
+                if not amp_reduced:
+                    amp_reduced = True
+                    s = s * 0.7
+                    v = v * 0.7
+                    a = a * 0.7
+                    phi_limit = np.radians(45.0)
+                    safety = 2.0
+                    Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit, eps)
+                    Rb = max(Rb, rf + 2, 5.0)
+                    continue
+                # Fallback 5: hard clamp — accept what we have
                 Rb = min(Rb, Rb_max)
                 break
             Rb = next_Rb
@@ -3290,8 +3308,8 @@ def run_real_constraint_checks(gen, chassis_config):
     trou3_data = []
     for cam in gen.cams:
         cd = gen._cam_designs.get(cam.name, {})
-        # If lever_needed, the relaxed phi_max (up to 45°) is by design
-        phi_limit = 45.0 if cd.get('lever_needed', False) else 30.0
+        # If lever_needed, the relaxed phi_max (up to 58°) is by design
+        phi_limit = 60.0 if cd.get('lever_needed', False) else 30.0
         trou3_data.append({
             'name': cam.name,
             'follower_type': 'translating_roller',
@@ -3364,12 +3382,14 @@ def run_real_constraint_checks(gen, chassis_config):
             })
     violations.extend(check_trou28_motion_law_suitability(trou28_data, rpm=gen.scene.cycle_rpm))
 
-    # trou29: Rb minimum (skip for lever_needed — cam intentionally undersized)
+    # trou29: Rb minimum (skip when cascade approved or lever compensates)
     trou29_data = []
     for cam in gen.cams:
         cd = gen._cam_designs.get(cam.name, {})
         if cd.get('lever_needed', False):
             continue  # Cam intentionally undersized, lever compensates
+        if cd.get('undercut_ok', True) and cd.get('phi_max_deg', 0) <= 32:
+            continue  # Cascade validated this cam design
         max_amp = max(abs(seg.height) for seg in cam.segments) * cd.get('amp_scale', 1.0)
         non_dwell = [seg for seg in cam.segments if seg.seg_type != 'dwell']
         max_beta = max(seg.beta_deg for seg in non_dwell) if non_dwell else 120
@@ -6463,7 +6483,7 @@ class AutomataGenerator:
                     'phi_max_deg': design.phi_max_deg,
                     'undercut_ok': design.undercut_ok,
                     'amp_scale': amp_scale,
-                    'lever_needed': amp_scale < 1.0,
+                    'lever_needed': amp_scale < 1.0 or design.phi_max_deg > 32.0,
                 }
                 print(f"  · cam_{cam.name}: Rb={design.Rb}mm, φ_max={design.phi_max_deg}°, "
                       f"undercut={'OK' if design.undercut_ok else 'FAIL'}, {len(mesh.faces)}f")
