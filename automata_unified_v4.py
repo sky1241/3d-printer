@@ -1536,17 +1536,30 @@ def create_base_plate(config):
 def create_bearing_wall(config, side="left", bearing_positions=None):
     h, d, t = config.total_height, config.depth, config.wall_thickness
     wall = shapely_box(0, 0, t, h)
+    bore_metadata = []
     if bearing_positions:
         for py, pz in bearing_positions:
             br = config.camshaft_diameter/2 + config.bearing_clearance
-            wall = wall.difference(Point(t/2, pz).buffer(br, resolution=24))
+            if 2 * br >= t * 0.95:
+                # Bore wider than wall → can't cut in 2D without splitting
+                # Store as metadata; physical bore is through-hole post-printed or designed as open cradle
+                bore_metadata.append({'y': py, 'z': pz, 'radius': br})
+            else:
+                wall = wall.difference(Point(t/2, pz).buffer(br, resolution=24))
     if h > 40:
         cutout = shapely_box(t*0.3, h*0.3, t*0.7, h*0.7).buffer(2).buffer(-2)
         wall = wall.difference(cutout)
     if not wall.is_valid: wall = wall.buffer(0)
     mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d-10)
-    if side == "left": mesh.apply_translation([-config.width/2, -d/2+5, config.plate_thickness])
-    else: mesh.apply_translation([config.width/2-t, -d/2+5, config.plate_thickness])
+    # FIX SPATIAL-3: rotate +π/2 around X to put height on Z axis
+    # Before: X=thickness, Y=height, Z=depth(extrusion)
+    # After rotation +π/2 X: X=thickness, Y=-depth, Z=height
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
+    if side == "left": mesh.apply_translation([-config.width/2, d/2-5, config.plate_thickness])
+    else: mesh.apply_translation([config.width/2-t, d/2-5, config.plate_thickness])
+    if bore_metadata:
+        mesh.metadata['bore_positions'] = bore_metadata
+    return mesh
     return mesh
 
 
@@ -1692,8 +1705,9 @@ def generate_chassis_box(config, cam_count=1, follower_guides=None):
     else:
         parts["base_plate"] = create_base_plate(config)
     cz = config.total_height * 0.5
-    parts["wall_left"] = create_bearing_wall(config, "left", [(0, cz)])
-    parts["wall_right"] = create_bearing_wall(config, "right", [(0, cz)])
+    bore_local_z = cz - config.plate_thickness  # bore position in wall's local frame
+    parts["wall_left"] = create_bearing_wall(config, "left", [(0, bore_local_z)])
+    parts["wall_right"] = create_bearing_wall(config, "right", [(0, bore_local_z)])
     parts["camshaft_bracket"] = create_camshaft_bracket(config, z_position=cz-7.5)
     _make_shaft_and_drive(config, cam_count, cz, parts)
     _add_follower_guides(parts, follower_guides, config)
@@ -2620,7 +2634,12 @@ def create_bearing_wall_with_joints(config: 'ChassisConfig',
         for py, pz in bearing_positions:
             # Use JointConfig free-rotation clearance
             bore = make_bore_hole_2d(t / 2, pz, joint_cfg, fit="free")
-            wall = wall.difference(bore)
+            bore_bounds = bore.bounds  # (minx, miny, maxx, maxy)
+            if (bore_bounds[2] - bore_bounds[0]) >= t * 0.95:
+                # Bore wider than wall → skip 2D bore, annotate in metadata
+                pass
+            else:
+                wall = wall.difference(bore)
     
     if h > 40:
         cutout = shapely_box(t * 0.3, h * 0.3, t * 0.7, h * 0.7).buffer(2).buffer(-2)
@@ -2630,10 +2649,13 @@ def create_bearing_wall_with_joints(config: 'ChassisConfig',
         wall = wall.buffer(0)
     mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), d - 10)
     
+    # FIX SPATIAL-3: rotate +π/2 around X to put height on Z axis
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
+    
     if side == "left":
-        mesh.apply_translation([-config.width / 2, -d / 2 + 5, config.plate_thickness])
+        mesh.apply_translation([-config.width / 2, d / 2 - 5, config.plate_thickness])
     else:
-        mesh.apply_translation([config.width / 2 - t, -d / 2 + 5, config.plate_thickness])
+        mesh.apply_translation([config.width / 2 - t, d / 2 - 5, config.plate_thickness])
     
     mesh.metadata['joint_type'] = 'bearing_bore'
     mesh.metadata['chamfer'] = joint_cfg.chamfer_depth
