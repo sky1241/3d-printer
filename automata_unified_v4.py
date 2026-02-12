@@ -1616,6 +1616,43 @@ def create_lever_arm(pivot_pos, input_length, output_length,
     return mesh
 
 
+def create_lever_bracket(pivot_pos, arm_width, pin_diameter, wall_thickness=3.0):
+    """Create a U-bracket to support the lever pivot pin.
+    Two upright pillars connected by a base plate.
+    The lever oscillates freely in the gap between pillars.
+    """
+    gap = arm_width + 0.5  # clearance for lever
+    pw = wall_thickness  # pillar width
+    ph = pin_diameter * 3  # pillar height (enough meat around pin)
+    pd = pw  # pillar depth
+    
+    # Two pillars + base as a single extruded profile
+    # Profile in XZ: base + 2 pillars forming a U-shape
+    from shapely.geometry import MultiPolygon
+    
+    base_w = gap + 2 * pw
+    # Left pillar
+    lp = shapely_box(-base_w/2, -ph/2, -base_w/2 + pw, ph/2)
+    # Right pillar  
+    rp = shapely_box(base_w/2 - pw, -ph/2, base_w/2, ph/2)
+    # Base connecting them
+    bp = shapely_box(-base_w/2, -ph/2, base_w/2, -ph/2 + pw)
+    
+    profile = lp.union(rp).union(bp)
+    if not profile.is_valid:
+        profile = profile.buffer(0)
+    
+    # Extrude in Y direction
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(profile), pd)
+    # Center Y
+    mesh.apply_translation([0, -pd/2, 0])
+    
+    # Position at pivot
+    mesh.apply_translation(pivot_pos)
+    mesh.metadata['part_type'] = 'lever_bracket'
+    return mesh
+
+
 def create_bearing_wall(config, side="left", bearing_positions=None):
     h, d, t = config.total_height, config.depth, config.wall_thickness
     wall = shapely_box(0, 0, t, h)
@@ -3900,6 +3937,10 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('lever_', 'cam_'), ('lever_', 'follower_guide_'),  # lever rides on cam
         ('lever_', 'camshaft'),  # lever pivot near shaft
         ('lever_', 'fig_'),  # lever output pushes figurine
+        ('bracket_lever_', 'lever_'),  # bracket holds lever
+        ('bracket_lever_', 'cam_'),  # bracket near cam
+        ('bracket_lever_', 'camshaft'),  # bracket near shaft
+        ('bracket_lever_', 'follower_guide_'),  # bracket near follower
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -7002,6 +7043,16 @@ class AutomataGenerator:
                 lever_count += 1
                 cd['lever_pivot_z'] = pivot_z
                 cd['lever_output_z'] = pivot_z + output_arm
+                
+                # P7: Add pivot bracket
+                try:
+                    bracket = create_lever_bracket(
+                        pivot_pos, arm_width=4.0,
+                        pin_diameter=chassis_config.camshaft_diameter + 0.5,
+                        wall_thickness=chassis_config.wall_thickness)
+                    self.all_parts[f"bracket_lever_{cam.name}"] = bracket
+                except Exception:
+                    pass  # Boolean may fail, bracket is optional
         
         if lever_count > 0:
             print(f"  · Leviers: {lever_count} bras de levier générés")
