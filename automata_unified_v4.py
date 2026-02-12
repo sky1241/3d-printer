@@ -4136,6 +4136,124 @@ def run_real_constraint_checks(gen, chassis_config):
         precision_required_mm=3.0,  # toy automata, not precision instrument
     ))
 
+    # ── EXOTIC CASES ──
+    track_data = []
+    for track in gen.scene.tracks:
+        max_amp = max((p.amplitude for p in track.primitives if p.kind != 'PAUSE'), default=10.0)
+        track_data.append({
+            'name': track.name,
+            'motion_type': 'oscillation',
+            'amplitude_deg': max_amp * 3,  # rough linear→angular conversion
+            'speed_rpm': gen.scene.cycle_rpm if hasattr(gen.scene, 'cycle_rpm') else 30,
+            'total_stroke_mm': max_amp * 2,
+            'axes': ['z'],
+            'compound': False,
+            'intermittent': False,  # cam dwells ≠ Geneva mechanism
+            'dwell_fraction': sum(p.beta for p in track.primitives if p.kind == 'PAUSE') / 360.0,
+            'steps_per_revolution': 1,
+            'external_load_N': 0.5,
+            'load_lever_arm_mm': 30.0,
+        })
+
+    seg_data = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        rises = [s for s in cam.segments if s.seg_type in ('rise', 'return')]
+        for seg in rises:
+            seg_data.append({
+                'track_name': cam.name,
+                'segment_type': seg.seg_type.upper(),
+                'beta_deg': seg.beta_deg,
+                'amplitude_mm': abs(seg.height),
+                'beta_rise_deg': seg.beta_deg if seg.seg_type == 'rise' else 120,
+                'beta_return_deg': seg.beta_deg if seg.seg_type == 'return' else 120,
+            })
+
+    violations.extend(check_exotic_cas101_rotation_pure(track_data))
+    violations.extend(check_exotic_cas102_large_stroke(track_data))
+    if seg_data:
+        violations.extend(check_exotic_cas103_fast_motion(seg_data))
+    violations.extend(check_exotic_cas104_many_cams(
+        len(gen.cams), chassis_config.camshaft_length))
+    violations.extend(check_exotic_cas105_compound_motion(track_data))
+    violations.extend(check_exotic_cas106_intermittent(track_data))
+    if seg_data:
+        violations.extend(check_exotic_cas107_asymmetric(seg_data))
+    violations.extend(check_exotic_cas108_external_load(track_data, MotorSpec()))
+    violations.extend(check_exotic_cas109_inverted('vertical', True, track_data))
+
+    total_size = max(chassis_config.width, chassis_config.depth, chassis_config.total_height)
+    violations.extend(check_exotic_cas110_scale(total_size))
+
+    # ── REMAINING PRINT/MECHANICAL CHECKS ──
+
+    # trou64: wear rate
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        amp = max(abs(s.height) for s in cam.segments) if cam.segments else 5.0
+        violations.extend(check_trou_64_wear_rate(
+            contact_force_N=1.0,
+            sliding_distance_per_cycle_mm=amp * 4,
+            total_cycles=int(cam_rpm * 60 * 100),
+            lubricated=False,
+        ))
+
+    # trou65: lubrication
+    violations.extend(check_trou_65_lubrication(
+        has_gears=chassis_config.drive_mode == 'motor',
+        has_cams=True,
+        has_bearings=True,
+        current_lubrication='none',
+    ))
+
+    # trou66: hole compensation (shaft bore)
+    violations.extend(check_trou_66_hole_compensation(
+        nominal_diameter_mm=chassis_config.camshaft_diameter,
+        designed_diameter_mm=chassis_config.camshaft_diameter + 0.5,
+        is_clearance_fit=True,
+    ))
+
+    # trou67: horizontal holes
+    violations.extend(check_trou_67_horizontal_hole(
+        diameter_mm=chassis_config.camshaft_diameter + 0.5,
+        is_horizontal=True,
+        uses_teardrop=False,
+    ))
+
+    # trou68: press-fit (cams on shaft)
+    violations.extend(check_trou_68_press_fit(
+        shaft_diameter_mm=chassis_config.camshaft_diameter,
+        hole_diameter_mm=chassis_config.camshaft_diameter + 0.1,
+        is_press_fit=True,
+    ))
+
+    # trou69: motor protection
+    if chassis_config.drive_mode == 'motor':
+        motor = MotorSpec()
+        violations.extend(check_trou_69_motor_protection(
+            has_motor=True,
+            stall_current_A=motor.current_stall_A,
+            rated_voltage_V=motor.voltage_v,
+            has_fuse=False,
+        ))
+
+    # trou70: battery autonomy
+    if chassis_config.drive_mode == 'motor':
+        violations.extend(check_trou_70_battery_autonomy(
+            running_current_A=MotorSpec().current_no_load_A * 1.5,
+            battery_mAh=2500,  # 4x AA
+            target_hours=2.0,
+            battery_voltage_V=6.0,
+        ))
+
+    # trou72: infill recommendations per part type
+    for pname in gen.all_parts:
+        ptype = 'cam' if 'cam_' in pname else 'chassis' if pname in ('base_plate', 'wall_left', 'wall_right') else 'figurine' if 'fig_' in pname else 'other'
+        infill = 40 if ptype == 'cam' else 20
+        violations.extend(check_trou_72_infill(ptype, infill))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
