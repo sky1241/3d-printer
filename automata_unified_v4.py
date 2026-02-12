@@ -3899,6 +3899,82 @@ def run_real_constraint_checks(gen, chassis_config):
                     context={"cam": cam.name, "gap_mm": gap}
                 ))
 
+    # ── DEAD CODE → LIVE: Wire remaining useful checks ──
+
+    # trou60: offset pressure angle per cam
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        if design:
+            violations.extend(check_trou_60_offset_pressure_angle(
+                Rb=design.Rb_mm,
+                h=max(abs(seg.height) for seg in cam.segments) if cam.segments else 5.0,
+                beta_deg=design.beta_rise_deg if hasattr(design, 'beta_rise_deg') else 120.0,
+                offset_mm=0.0,
+                phi_max_deg=design.phi_max_deg if hasattr(design, 'phi_max_deg') else 30.0,
+            ))
+
+    # trou13: shaft retention
+    violations.extend(check_trou13_shaft_retention(
+        shaft_diameter_mm=chassis_config.camshaft_diameter,
+        retention_method='press_fit',  # PLA shaft with printed collars
+        shaft_material='PLA',
+    ))
+
+    # trou14: component retention on shaft
+    comps = []
+    for cam in gen.cams:
+        comps.append({
+            'name': f"cam_{cam.name}",
+            'width_mm': 8.0,
+            'retained': True,  # D-flat + press fit
+        })
+    violations.extend(check_trou14_component_retention(
+        comps, chassis_config.camshaft_diameter))
+
+    # trou21: print orientation per part
+    orient_parts = []
+    for pname in gen.all_parts:
+        if pname.startswith('cam_'):
+            orient_parts.append({'name': pname, 'type': 'cam', 'orientation': 'flat'})
+        elif pname.startswith('lever_'):
+            orient_parts.append({'name': pname, 'type': 'lever', 'orientation': 'flat'})
+        elif pname.startswith('fig_'):
+            orient_parts.append({'name': pname, 'type': 'figurine', 'orientation': 'vertical'})
+        elif pname in ('base_plate', 'top_plate'):
+            orient_parts.append({'name': pname, 'type': 'chassis', 'orientation': 'flat'})
+        elif pname.startswith('wall_'):
+            orient_parts.append({'name': pname, 'type': 'chassis', 'orientation': 'vertical'})
+        elif pname.startswith('follower_guide_'):
+            orient_parts.append({'name': pname, 'type': 'follower', 'orientation': 'vertical'})
+    if orient_parts:
+        violations.extend(check_trou21_print_orientation(orient_parts))
+
+    # trou22: print supports estimation
+    support_parts = []
+    for pname, pmesh in gen.all_parts.items():
+        support_parts.append({
+            'name': pname,
+            'max_overhang_deg': 45.0 if pname.startswith('fig_') else 30.0,
+            'has_internal_cavity': 'gear' in pname or 'motor' in pname,
+            'bridge_length_mm': 0.0,
+        })
+    if support_parts:
+        violations.extend(check_trou22_print_supports(support_parts))
+
+    # trou17: startup torque
+    if chassis_config.drive_mode == 'motor':
+        total_mass = sum(
+            pmesh.volume * 1.24e-6 if hasattr(pmesh, 'volume') else 0.01
+            for pmesh in gen.all_parts.values()
+        )  # mm³ × 1.24g/cm³ / 1e6 = kg
+        violations.extend(check_trou17_startup_torque(
+            motor=MotorSpec(),
+            total_mass_kg=total_mass,
+            avg_radius_m=0.020,
+            num_cams=len(gen.cams),
+        ))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
