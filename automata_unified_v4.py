@@ -3874,6 +3874,31 @@ def run_real_constraint_checks(gen, chassis_config):
         'timing_diagram': True,
     }))
 
+    # ── P8: FOLLOWER REACH VALIDATION ──
+    # For direct-drive cams (no lever), the follower guide must reach the cam
+    for i, cam in enumerate(gen.cams):
+        cd = gen._cam_designs.get(cam.name, {})
+        has_lever = cd.get('lever_needed', False) and f"lever_{cam.name}" in gen.all_parts
+        if has_lever:
+            continue  # lever bridges the gap
+        
+        cam_mesh = gen.cam_meshes.get(f"cam_{cam.name}")
+        fg = gen.all_parts.get(f"follower_guide_{i}")
+        if cam_mesh and fg and len(cam_mesh.faces) > 0 and len(fg.faces) > 0:
+            cam_top_z = float(cam_mesh.bounds[1][2])
+            fg_bottom_z = float(fg.bounds[0][2])
+            gap = fg_bottom_z - cam_top_z
+            if gap > 5.0:  # more than 5mm gap = can't reach
+                violations.append(Violation(
+                    code="FOLLOWER_REACH_GAP",
+                    trou=8,
+                    severity=Severity.WARNING,
+                    message=f"[{cam.name}] Follower guide {gap:.0f}mm above cam (direct drive). "
+                            f"Consider extending guide or adding linkage.",
+                    solution="Lower follower_z or add connecting rod.",
+                    context={"cam": cam.name, "gap_mm": gap}
+                ))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
