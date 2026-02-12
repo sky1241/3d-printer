@@ -4580,6 +4580,9 @@ def _make_eyes(head_mesh, head_center, head_radius, eye_radius=0.8,
     
     Returns: dict of eye parts (orbit_left, orbit_right, pupil_left, pupil_right)
     """
+    # Enforce minimum printable sizes (FDM min feature ~1mm)
+    eye_radius = max(eye_radius, 1.0)
+    pupil_radius = max(pupil_radius, 0.7)
     parts = {}
     r = head_radius
     angle = np.radians(lateral_angle_deg)
