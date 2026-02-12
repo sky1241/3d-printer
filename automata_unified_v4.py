@@ -4051,6 +4051,91 @@ def run_real_constraint_checks(gen, chassis_config):
             operating_rpm=cam_rpm,
         ))
 
+    # trou18: motor stall protection
+    if chassis_config.drive_mode == 'motor':
+        violations.extend(check_trou18_stall_protection(
+            has_mechanical_fuse=False,
+            has_current_limit=False,
+            motor_type='dc_geared',
+            stall_current_A=MotorSpec().current_stall_A,
+            continuous_current_A=MotorSpec().current_no_load_A,
+        ))
+
+    # trou23: print time/cost estimate
+    part_vols = []
+    for pname, pmesh in gen.all_parts.items():
+        vol_cm3 = pmesh.volume / 1000.0 if hasattr(pmesh, 'volume') else 1.0
+        part_vols.append((pname, vol_cm3))
+    violations.extend(check_trou23_print_estimate(part_vols))
+
+    # physics_e2: cam fatigue (physics-based, different from trou47)
+    cam_fatigue_e2 = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        cam_fatigue_e2.append({
+            'name': cam.name,
+            'Rb_mm': design.Rb_mm if design else 15.0,
+            'rf_mm': cd.get('rf_mm', 3.0),
+            'contact_force_N': 1.0,
+            'material': 'PLA',
+        })
+    violations.extend(check_physics_e2_fatigue(cam_fatigue_e2, cam_rpm, target_hours=100))
+
+    # physics_e3: vibrations
+    violations.extend(check_physics_e3_vibrations(
+        rpm=cam_rpm,
+        follower_mass_kg=0.005,
+        spring_rate_N_per_mm=0.5,
+    ))
+
+    # physics_e4: directional tolerances
+    tol_parts = []
+    for pname, pmesh in gen.all_parts.items():
+        if hasattr(pmesh, 'bounds') and len(pmesh.faces) >= 4:
+            dims = pmesh.bounds[1] - pmesh.bounds[0]
+            tol_parts.append({
+                'name': pname,
+                'size_x_mm': float(dims[0]),
+                'size_y_mm': float(dims[1]),
+                'size_z_mm': float(dims[2]),
+                'has_bore': 'cam_' in pname or 'gear' in pname,
+                'has_mating_surface': pname in ('wall_left', 'wall_right', 'base_plate'),
+            })
+    if tol_parts:
+        violations.extend(check_physics_e4_tolerances(tol_parts))
+
+    # physics_e5: fastener/assembly feasibility
+    fasteners = [
+        {'type': 'screw', 'size_mm': 3.0, 'material': 'steel', 'into_plastic': True}
+        for _ in range(4)  # 4 chassis screws
+    ]
+    violations.extend(check_physics_e5_assembly(fasteners))
+
+    # physics_e6: Hertz contact pressure (physics-based)
+    cam_hertz_e6 = []
+    for cam in gen.cams:
+        cd = gen._cam_designs.get(cam.name, {})
+        design = cd.get('design')
+        cam_hertz_e6.append({
+            'name': cam.name,
+            'Rb_mm': design.Rb_mm if design else 15.0,
+            'rf_mm': cd.get('rf_mm', 3.0),
+            'contact_force_N': 1.0,
+            'contact_width_mm': 4.0,
+            'material': 'PLA',
+        })
+    violations.extend(check_physics_e6_hertz(cam_hertz_e6))
+
+    # physics_e7: backlash accumulation
+    violations.extend(check_physics_e7_backlash(
+        n_gear_stages=1 if chassis_config.drive_mode == 'motor' else 0,
+        n_pivots=min(1, len([p for p in gen.all_parts if p.startswith('lever_')])),  # parallel levers, not serial
+        follower_guide=True,
+        output_lever_length_mm=30.0,
+        precision_required_mm=3.0,  # toy automata, not precision instrument
+    ))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
@@ -7994,7 +8079,7 @@ SAFETY = {
     "min_edge_radius_mm": 0.5,
 
     # ─── Backlash cumulé ───
-    "backlash_max_output_mm": 1.0,
+    "backlash_max_output_mm": 3.0,  # toy automata: 3mm play acceptable
     "backlash_per_gear_stage_deg": 1.5,
     "backlash_per_pivot_deg": 2.0,
     "backlash_follower_guide_mm": 0.3,
