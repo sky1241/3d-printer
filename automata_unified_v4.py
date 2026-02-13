@@ -4637,6 +4637,17 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
                     b1[0][2] <= b2[1][2] and b1[1][2] >= b2[0][2]):
                 overlap = np.minimum(b1[1], b2[1]) - np.maximum(b1[0], b2[0])
                 if np.all(overlap > 1.0):
+                    # Refine: if fig↔pushrod, check actual mesh intersection
+                    # (holes may have been punched, making bbox misleading)
+                    is_fig_pushrod = (('fig_' in n1 and 'pushrod' in n2) or
+                                     ('fig_' in n2 and 'pushrod' in n1))
+                    if is_fig_pushrod:
+                        try:
+                            inter = m1.intersection(m2, engine='manifold')
+                            if inter is None or inter.volume < 1.0:
+                                continue  # Hole punched — no real collision
+                        except Exception:
+                            pass  # If boolean fails, report bbox collision
                     violations.append(f"COLLISION: {n1}∩{n2} [{overlap[0]:.0f}×{overlap[1]:.0f}×{overlap[2]:.0f}mm]")
 
     if verbose:
@@ -8814,6 +8825,50 @@ class AutomataGenerator:
         
         if pushrod_count > 0:
             print(f"  · Pushrods: {pushrod_count} tiges de liaison levier→figurine")
+
+        # ── Step 5a-ter: Punch pushrod holes through figurine body ──
+        # Pushrods go straight through fig_body and fig_acc_* parts.
+        # Fix: subtract a clearance cylinder from each intersecting fig part.
+        PUSHROD_HOLE_CLEARANCE = 0.5  # mm extra radius around pushrod
+        punch_count = 0
+        for pname, pmesh in list(self.all_parts.items()):
+            if not pname.startswith('pushrod_'):
+                continue
+            # Create a slightly larger cylinder along the pushrod path
+            p_extents = pmesh.bounding_box.extents
+            p_center = pmesh.centroid.copy()
+            # Pushrod is roughly vertical — create a vertical hole cylinder
+            hole_r = max(p_extents[0], p_extents[1]) / 2.0 + PUSHROD_HOLE_CLEARANCE
+            hole_h = p_extents[2] + 2.0  # +2mm margin
+            hole_cyl = trimesh.creation.cylinder(radius=hole_r, height=hole_h, sections=24)
+            hole_cyl.apply_translation(p_center)
+
+            # Subtract from intersecting fig parts (body, carapace, etc.)
+            for fname in list(self.all_parts.keys()):
+                if not fname.startswith('fig_'):
+                    continue
+                if 'pin_' in fname:
+                    continue  # Don't punch through pins
+                if fname == pname.replace('pushrod_', 'fig_'):
+                    continue  # Don't punch the target part
+                fmesh = self.all_parts[fname]
+                # Quick bbox intersection check
+                try:
+                    if not fmesh.bounding_box.intersection(pmesh.bounding_box).volume > 0:
+                        continue
+                except Exception:
+                    continue
+                # Boolean subtract
+                try:
+                    punched = fmesh.difference(hole_cyl, engine='manifold')
+                    if punched is not None and punched.is_volume and punched.volume > 5:
+                        self.all_parts[fname] = punched
+                        punch_count += 1
+                except Exception:
+                    pass  # Keep original if boolean fails
+
+        if punch_count > 0:
+            print(f"  · Pushrod holes: {punch_count} trous percés dans figurine")
 
         total_faces = sum(len(m.faces) for m in self.all_parts.values())
         print(f"  → Total: {len(self.all_parts)} pièces, {total_faces} faces")
