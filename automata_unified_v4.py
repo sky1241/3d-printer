@@ -6952,6 +6952,59 @@ class JointFactory:
         return hole_diameter > pin_diameter
 
     @staticmethod
+    def split_at_joint(
+        mesh: 'trimesh.Trimesh',
+        cut_point: tuple,
+        cut_normal: tuple,
+        gap: float = 0.5,
+    ) -> tuple:
+        """Coupe un mesh en 2 parties (fixed + mobile) avec un gap de rotation.
+
+        Le plan de coupe passe par cut_point, perpendiculaire à cut_normal.
+        Le côté où pointe la normale = partie mobile (qui bouge).
+        Le côté opposé = partie fixe (vissée au châssis).
+
+        Args:
+            mesh:       Mesh trimesh à couper
+            cut_point:  Point 3D du plan de coupe (ex: position du cou)
+            cut_normal: Normale du plan, pointe vers la partie mobile
+            gap:        Espace entre les 2 parties en mm (clearance rotation)
+
+        Returns:
+            (fixed_mesh, mobile_mesh): tuple de trimesh.Trimesh, tous deux watertight
+
+        Raises:
+            ValueError: si le mesh ne peut pas être coupé (trop petit, etc.)
+        """
+        cut_point = np.array(cut_point, dtype=float)
+        cut_normal = np.array(cut_normal, dtype=float)
+        # Normaliser
+        norm_len = np.linalg.norm(cut_normal)
+        if norm_len < 1e-9:
+            raise ValueError("cut_normal must be non-zero")
+        cut_normal = cut_normal / norm_len
+
+        half_gap = gap / 2.0
+
+        # Fixed = côté opposé à la normale (normal DOWN → keep below)
+        fixed_origin = cut_point - cut_normal * half_gap
+        fixed_mesh = trimesh.intersections.slice_mesh_plane(
+            mesh, -cut_normal, fixed_origin, cap=True)
+
+        # Mobile = côté de la normale (normal UP → keep above)
+        mobile_origin = cut_point + cut_normal * half_gap
+        mobile_mesh = trimesh.intersections.slice_mesh_plane(
+            mesh, cut_normal, mobile_origin, cap=True)
+
+        # Validation
+        if fixed_mesh is None or len(fixed_mesh.vertices) < 4:
+            raise ValueError("Split produced empty fixed part — cut_point may be outside mesh")
+        if mobile_mesh is None or len(mobile_mesh.vertices) < 4:
+            raise ValueError("Split produced empty mobile part — cut_point may be outside mesh")
+
+        return fixed_mesh, mobile_mesh
+
+    @staticmethod
     def calculate_amplitude(pushrod_travel: float, lever_arm: float) -> float:
         """Calcule l'amplitude angulaire (degrés) d'un pivot.
 
