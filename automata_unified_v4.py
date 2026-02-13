@@ -16695,6 +16695,21 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                         cm.bounds[1][1] - cm.bounds[0][1]) / 2)
             data['cams'].append(cam_entry)
             
+            # ── Auto-clamp Rb ≥ Rb_min (same logic as generate() pipeline) ──
+            # Presets may have small hardcoded Rb; enforce minimum here
+            try:
+                _h = cam_entry.get('amplitude_mm', 10)
+                _beta = cam_entry.get('beta_deg', 90)
+                _phi_lim = cam_entry.get('phi_limit_deg', 30.0)
+                _law = cam_entry.get('motion_law', 'cycloidal')
+                _rf = cam_entry.get('roller_radius_mm', 3.0)
+                _off = cam_entry.get('offset_mm', 0.0)
+                _rb_min = compute_Rb_min_analytical(_h, _beta, _phi_lim, _law, _rf, _off)
+                if cam_entry['Rb_mm'] < _rb_min:
+                    cam_entry['Rb_mm'] = math.ceil(_rb_min) + 1
+            except Exception:
+                pass  # non-critical: constraint check will catch it anyway
+            
             # Build segments list for check_trou35 (dwell angle check)
             for seg in cam_obj.segments:
                 data.setdefault('segments', []).append({
