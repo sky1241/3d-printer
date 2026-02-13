@@ -4463,72 +4463,82 @@ def run_real_constraint_checks(gen, chassis_config):
     # ── B10: ARTICULATION CHECKS ──
     fig_cfg = getattr(gen.scene, '_figurine_cfg', None)
     if fig_cfg is not None:
-        pin_parts = {k: v for k, v in gen.all_parts.items() if k.startswith('fig_pin_')}
-        for pin_name, pin_mesh in pin_parts.items():
-            joint_label = pin_name.replace('fig_pin_', '')
-            # Check pin exists and is watertight
-            if not pin_mesh.is_watertight:
+        # Collect all joint parts (pin, ball, hinge)
+        _joint_prefixes = ('fig_pin_', 'fig_ball_', 'fig_hinge_')
+        joint_parts = {k: v for k, v in gen.all_parts.items()
+                       if any(k.startswith(p) for p in _joint_prefixes)}
+        
+        def _joint_label(name):
+            for p in _joint_prefixes:
+                if name.startswith(p): return name[len(p):]
+            return name
+        
+        for jpart_name, jpart_mesh in joint_parts.items():
+            label = _joint_label(jpart_name)
+            # Check joint part is watertight
+            if not jpart_mesh.is_watertight:
                 violations.append(Violation(
                     "JOINT_PIN_NOT_WATERTIGHT", Severity.WARNING,
-                    f"Pin joint '{joint_label}' n'est pas watertight",
-                    "Vérifier la géométrie CSG du pin joint"))
-            # Check pin diameter (from bounding box)
-            extents = pin_mesh.bounding_box.extents
-            min_extent = min(extents[:2])  # X,Y = diameter-ish
-            if min_extent < 2.5:
-                violations.append(Violation(
-                    "JOINT_PIN_TOO_THIN", Severity.WARNING,
-                    f"Pin '{joint_label}' Ø≈{min_extent:.1f}mm < 2.5mm — fragile en FDM PLA",
+                    f"Joint '{label}' n'est pas watertight",
+                    "Vérifier la géométrie CSG du joint"))
+            # Check joint diameter (from bounding box) — skip for hinges
+            mech_type = jpart_mesh.metadata.get('mechanism_type', 'pin')
+            if mech_type != 'hinge':
+                extents = jpart_mesh.bounding_box.extents
+                min_extent = min(extents[:2])  # X,Y = diameter-ish
+                if min_extent < 2.5:
+                    violations.append(Violation(
+                        "JOINT_PIN_TOO_THIN", Severity.WARNING,
+                        f"Joint '{label}' Ø≈{min_extent:.1f}mm < 2.5mm — fragile en FDM PLA",
                     "Augmenter le diamètre de l'axe à ≥3mm",
                     value=min_extent, limit=2.5))
 
-        # Check scene joints vs actual pin parts created
+        # Check scene joints vs actual joint parts created
         for jt in gen.scene.joints:
-            expected_pin = f'fig_pin_{jt.name}'
-            if expected_pin not in gen.all_parts:
-                # Only warn for parametric figurines (not old presets)
+            mechanism = getattr(jt, 'mechanism', 'pin')
+            mech_prefix = {'pin': 'fig_pin', 'ball': 'fig_ball', 'hinge': 'fig_hinge'}.get(mechanism, 'fig_pin')
+            expected = f'{mech_prefix}_{jt.name}'
+            if expected not in gen.all_parts:
                 child = jt.child_link.lower() if jt.child_link else ''
-                # Check if any fig part matches the child
                 has_fig_child = any(k.startswith(f'fig_{child.split("_")[0]}')
                                    for k in gen.all_parts if k.startswith('fig_'))
                 if has_fig_child:
                     violations.append(Violation(
                         "JOINT_NO_PIN", Severity.INFO,
-                        f"Joint '{jt.name}' (child='{jt.child_link}') sans pin joint correspondant",
+                        f"Joint '{jt.name}' (child='{jt.child_link}') sans {mechanism} joint correspondant",
                         "Vérifier que le nom du joint matche une fig part"))
 
-        # Check pin-to-mobile clearance (pin should be smaller than host)
-        for pin_name, pin_mesh in pin_parts.items():
-            joint_label = pin_name.replace('fig_pin_', '')
-            # Find corresponding mobile part
+        # Check joint-to-mobile clearance (joint part should be smaller than host)
+        for jpart_name, jpart_mesh in joint_parts.items():
+            label = _joint_label(jpart_name)
             for jt in gen.scene.joints:
-                if jt.name == joint_label:
+                if jt.name == label:
                     child = jt.child_link.lower() if jt.child_link else ''
                     mobile_key = f'fig_{child}'
                     mobile = gen.all_parts.get(mobile_key)
-                    if mobile and pin_mesh.volume > mobile.volume * 0.5:
+                    if mobile and jpart_mesh.volume > mobile.volume * 0.5:
                         violations.append(Violation(
                             "JOINT_PIN_TOO_LARGE", Severity.WARNING,
-                            f"Pin '{joint_label}' vol={pin_mesh.volume:.0f}mm³ > 50% de fig_{child} vol={mobile.volume:.0f}mm³",
-                            "Réduire le diamètre ou la longueur du pin",
-                            value=pin_mesh.volume, limit=mobile.volume * 0.5))
+                            f"Joint '{label}' vol={jpart_mesh.volume:.0f}mm³ > 50% de fig_{child} vol={mobile.volume:.0f}mm³",
+                            "Réduire le diamètre ou la longueur du joint",
+                            value=jpart_mesh.volume, limit=mobile.volume * 0.5))
                     break
 
         # Check return mechanism adequacy
-        for pin_name, pin_mesh in pin_parts.items():
-            ret_type = pin_mesh.metadata.get('return_mechanism', '')
-            grav_torque = pin_mesh.metadata.get('gravity_torque_mNm', 0)
-            joint_label = pin_name.replace('fig_pin_', '')
+        for jpart_name, jpart_mesh in joint_parts.items():
+            ret_type = jpart_mesh.metadata.get('return_mechanism', '')
+            grav_torque = jpart_mesh.metadata.get('gravity_torque_mNm', 0)
+            label = _joint_label(jpart_name)
             
             if ret_type == 'spring_needed':
                 violations.append(Violation(
                     "JOINT_NO_RETURN", Severity.WARNING,
-                    f"Joint '{joint_label}': gravité insuffisante — ressort de rappel nécessaire",
+                    f"Joint '{label}': gravité insuffisante — ressort de rappel nécessaire",
                     "Ajouter un ressort imprimé (leaf spring) ou contrepoids"))
             elif ret_type == 'gravity' and grav_torque < 0.5:
                 violations.append(Violation(
                     "JOINT_WEAK_GRAVITY", Severity.INFO,
-                    f"Joint '{joint_label}': couple gravité faible ({grav_torque:.1f} mNm) — friction pourrait bloquer",
+                    f"Joint '{label}': couple gravité faible ({grav_torque:.1f} mNm) — friction pourrait bloquer",
                     "Vérifier que les surfaces de contact sont lisses (ponçage)",
                     value=grav_torque, limit=0.5))
 
@@ -4748,6 +4758,8 @@ PART_ROLE_RULES = [
     ("fig_wing",  "fig_wing",      5),
     ("fig_tail",  "fig_wing",      5),
     ("fig_pin_",  "fig_pin",       6),   # articulation pin joints
+    ("fig_ball_", "fig_ball",      6),   # ball joint (rotule)
+    ("fig_hinge_","fig_hinge",     6),   # living hinge
     ("fig_acc_",  "fig_accessory", 6),   # figurine accessories (carapace etc)
     ("fig_",      "fig_body",      1),   # catch-all figurine
     ("collar_",   "collar",        8),   # cam collars
@@ -4917,6 +4929,18 @@ ROLE_SETTINGS = {
         "infill_pattern": "concentric",
         "speed_outer_wall": 60, "batch": "mechanism",
         "notes": "Axe d'articulation — 100% remplissage pour résistance au cisaillement.",
+    },
+    "fig_ball": {
+        "layer_height": 0.12, "wall_loops": 4, "infill_pct": 100,
+        "infill_pattern": "concentric",
+        "speed_outer_wall": 50, "batch": "mechanism",
+        "notes": "Rotule — 100% remplissage, basse vitesse pour surface lisse. Poncer la bille.",
+    },
+    "fig_hinge": {
+        "layer_height": 0.20, "wall_loops": 2, "infill_pct": 100,
+        "infill_pattern": "lines",
+        "speed_outer_wall": 40, "batch": "mechanism",
+        "notes": "Charnière vivante — imprimer à plat, couches alignées avec le pli. ~20 cycles PLA.",
     },
     "fig_accessory": {
         "layer_height": 0.16, "wall_loops": 3, "infill_pct": 15,
@@ -5509,6 +5533,10 @@ class Joint:
     position: Tuple[float,float,float] = (0., 0., 0.)
     parent_link: str = "base"; child_link: str = ""
     limits: Tuple[float,float] = (-45., 45.)
+    # New fields at end to preserve positional arg compatibility
+    mechanism: str = "pin"  # "pin" | "ball" | "hinge"
+    ball_diameter: float = 8.0  # for ball joints
+    hinge_width: float = 10.0   # for living hinges
 
 @dataclass
 class Link:
@@ -8844,15 +8872,29 @@ class AutomataGenerator:
             # Joint axis from scene (already in world frame for simple cases)
             joint_axis = np.array(jt.axis, dtype=float)
 
-            # Create pin joint
+            # Create joint based on mechanism type
             try:
+                mechanism = getattr(jt, 'mechanism', 'pin')
                 pin_d = 3.0  # default pin diameter
                 pin_clearance = 0.15
                 pin_length = 10.0  # will be auto-sized
 
-                pin_mesh, hole_mesh = JointFactory.create_pin_joint(
-                    diameter=pin_d, length=pin_length, clearance=pin_clearance,
-                    with_chamfer=False)
+                if mechanism == 'ball':
+                    # Ball joint: sphere-on-stem + socket cavity
+                    ball_d = getattr(jt, 'ball_diameter', 8.0)
+                    pin_mesh, hole_mesh = JointFactory.create_ball_joint(
+                        ball_diameter=ball_d, stem_diameter=pin_d, stem_length=pin_length)
+                elif mechanism == 'hinge':
+                    # Living hinge: thin strip (no separate pin/hole)
+                    hw = getattr(jt, 'hinge_width', 10.0)
+                    pin_mesh = JointFactory.create_living_hinge(
+                        width=hw, thickness=0.4, length=2.0)
+                    hole_mesh = None  # no hole to subtract for hinges
+                else:
+                    # Default: pin joint
+                    pin_mesh, hole_mesh = JointFactory.create_pin_joint(
+                        diameter=pin_d, length=pin_length, clearance=pin_clearance,
+                        with_chamfer=False)
 
                 # Orient pin along joint axis
                 z_axis = np.array([0.0, 0.0, 1.0])
@@ -8862,21 +8904,24 @@ class AutomataGenerator:
                     ang = np.arccos(np.clip(np.dot(z_axis, joint_axis / max(np.linalg.norm(joint_axis), 1e-9)), -1, 1))
                     rot_mat = trimesh.transformations.rotation_matrix(ang, rot_ax)
                     pin_mesh.apply_transform(rot_mat)
-                    hole_mesh.apply_transform(rot_mat)
+                    if hole_mesh is not None:
+                        hole_mesh.apply_transform(rot_mat)
 
                 pin_mesh.apply_translation(joint_pos)
-                hole_mesh.apply_translation(joint_pos)
+                if hole_mesh is not None:
+                    hole_mesh.apply_translation(joint_pos)
 
-                # Subtract hole from mobile part
-                try:
-                    articulated = fig_mobile.difference(hole_mesh, engine='manifold')
-                    if articulated is not None and articulated.volume > 1:
-                        self.all_parts[fig_mobile_key] = articulated
-                except Exception:
-                    pass  # Keep original if boolean fails
+                # Subtract hole from mobile part (pin/ball only)
+                if hole_mesh is not None:
+                    try:
+                        articulated = fig_mobile.difference(hole_mesh, engine='manifold')
+                        if articulated is not None and articulated.volume > 1:
+                            self.all_parts[fig_mobile_key] = articulated
+                    except Exception:
+                        pass  # Keep original if boolean fails
 
-                # Subtract hole from bridge part (if exists)
-                if fig_bridge_key and fig_bridge_key in self.all_parts:
+                # Subtract hole from bridge part (if exists, pin/ball only)
+                if hole_mesh is not None and fig_bridge_key and fig_bridge_key in self.all_parts:
                     try:
                         bridge_art = self.all_parts[fig_bridge_key].difference(hole_mesh, engine='manifold')
                         if bridge_art is not None and bridge_art.volume > 0.5:
@@ -8884,9 +8929,11 @@ class AutomataGenerator:
                     except Exception:
                         pass
 
-                # Add pin as separate part
-                pin_name = f'fig_pin_{jt.name}'
+                # Add joint part (pin/ball/hinge) as separate assembly piece
+                mech_prefix = {'pin': 'fig_pin', 'ball': 'fig_ball', 'hinge': 'fig_hinge'}.get(mechanism, 'fig_pin')
+                pin_name = f'{mech_prefix}_{jt.name}'
                 self.all_parts[pin_name] = pin_mesh
+                pin_mesh.metadata['mechanism_type'] = mechanism
                 art_count += 1
 
                 # ── Return mechanism detection ──
@@ -9108,8 +9155,9 @@ class AutomataGenerator:
             for k, m in self.all_parts.items():
                 if not k.startswith('fig_'):
                     continue
-                if 'pin_' in k:
-                    m.metadata['assembly_role'] = 'pin_joint'
+                if any(x in k for x in ('pin_', 'ball_', 'hinge_')):
+                    mtype = 'ball_joint' if 'ball_' in k else 'hinge_joint' if 'hinge_' in k else 'pin_joint'
+                    m.metadata['assembly_role'] = mtype
                 elif k in mobile_parts:
                     m.metadata['assembly_role'] = 'mobile'
                 else:
