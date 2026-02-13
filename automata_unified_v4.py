@@ -4456,6 +4456,60 @@ def run_real_constraint_checks(gen, chassis_config):
     except Exception:
         pass  # rtree may not be available
 
+    # ── B10: ARTICULATION CHECKS ──
+    fig_cfg = getattr(gen.scene, '_figurine_cfg', None)
+    if fig_cfg is not None:
+        pin_parts = {k: v for k, v in gen.all_parts.items() if k.startswith('fig_pin_')}
+        for pin_name, pin_mesh in pin_parts.items():
+            joint_label = pin_name.replace('fig_pin_', '')
+            # Check pin exists and is watertight
+            if not pin_mesh.is_watertight:
+                violations.append(Violation(
+                    "JOINT_PIN_NOT_WATERTIGHT", Severity.WARNING,
+                    f"Pin joint '{joint_label}' n'est pas watertight",
+                    "Vérifier la géométrie CSG du pin joint"))
+            # Check pin diameter (from bounding box)
+            extents = pin_mesh.bounding_box.extents
+            min_extent = min(extents[:2])  # X,Y = diameter-ish
+            if min_extent < 2.5:
+                violations.append(Violation(
+                    "JOINT_PIN_TOO_THIN", Severity.WARNING,
+                    f"Pin '{joint_label}' Ø≈{min_extent:.1f}mm < 2.5mm — fragile en FDM PLA",
+                    "Augmenter le diamètre de l'axe à ≥3mm",
+                    value=min_extent, limit=2.5))
+
+        # Check scene joints vs actual pin parts created
+        for jt in gen.scene.joints:
+            expected_pin = f'fig_pin_{jt.name}'
+            if expected_pin not in gen.all_parts:
+                # Only warn for parametric figurines (not old presets)
+                child = jt.child_link.lower() if jt.child_link else ''
+                # Check if any fig part matches the child
+                has_fig_child = any(k.startswith(f'fig_{child.split("_")[0]}')
+                                   for k in gen.all_parts if k.startswith('fig_'))
+                if has_fig_child:
+                    violations.append(Violation(
+                        "JOINT_NO_PIN", Severity.INFO,
+                        f"Joint '{jt.name}' (child='{jt.child_link}') sans pin joint correspondant",
+                        "Vérifier que le nom du joint matche une fig part"))
+
+        # Check pin-to-mobile clearance (pin should be smaller than host)
+        for pin_name, pin_mesh in pin_parts.items():
+            joint_label = pin_name.replace('fig_pin_', '')
+            # Find corresponding mobile part
+            for jt in gen.scene.joints:
+                if jt.name == joint_label:
+                    child = jt.child_link.lower() if jt.child_link else ''
+                    mobile_key = f'fig_{child}'
+                    mobile = gen.all_parts.get(mobile_key)
+                    if mobile and pin_mesh.volume > mobile.volume * 0.5:
+                        violations.append(Violation(
+                            "JOINT_PIN_TOO_LARGE", Severity.WARNING,
+                            f"Pin '{joint_label}' vol={pin_mesh.volume:.0f}mm³ > 50% de fig_{child} vol={mobile.volume:.0f}mm³",
+                            "Réduire le diamètre ou la longueur du pin",
+                            value=pin_mesh.volume, limit=mobile.volume * 0.5))
+                    break
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
