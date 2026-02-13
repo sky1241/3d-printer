@@ -26,6 +26,12 @@
 | BUG-DEGEN2 | f6babe5 | Enhanced mesh repair area-based (30→15 faces) |
 | BUG-SKIP | f6babe5 | Collision skip pairs multi-cam (388→12) |
 | BUG-CAM | 100940c | cam∩cam + collar∩pushrod skip pairs (dragon 5→1v) |
+| CAM-FIX5 | 5f3ae5d | abs(v) Rb_min, Rb_hard_cap, phi_limit, chassis pre-sizing, blacksmith amp |
+| DUAL-P1 | (pending) | Lever X-position offset for dual-shaft (was hardcoded X=0) |
+| DUAL-P2a | (pending) | TROU-73: gear mesh center distance validation |
+| DUAL-P2b | (pending) | BOM dual-shaft items (2× shaft, 2× sync gear, e-clips) |
+| DUAL-P2c | (pending) | Assembly guide dual-shaft steps |
+| DUAL-P2d | (pending) | extract_design_data: chassis dims from actual config, gears populated |
 
 ---
 
@@ -71,6 +77,12 @@ Complexité: HAUTE (touche toute la chaîne mécanisme).
 Faces dégénérées résiduelles dans fig_neck/head/tail/body.
 Cause: booléens CSG (perçage pushrod) sur géométrie complexe.
 Impact: mineur — les slicers (Cura, PrusaSlicer) gèrent bien.
+
+### P3 — Dual-shaft remaining
+- [ ] Idler gear option (same-direction rotation for shaft B)
+- [ ] Mid-bearing wall support for dual-shaft layout
+- [ ] Load-balanced cam assignment (greedy by Rb instead of even/odd)
+- [ ] Pushrod X-routing collision avoidance for shaft B cams
 
 ### P3 — Documentation
 - [ ] Mettre à jour CODEMAP avec les nouvelles skip_pairs

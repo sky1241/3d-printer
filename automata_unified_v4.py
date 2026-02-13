@@ -2345,27 +2345,36 @@ def generate_chassis_flat(config, cam_count=1, follower_guides=None):
 
 
 def generate_chassis_bom(config):
+    bom = []
     if config.drive_mode == 'crank':
-        return [
+        bom = [
             {"part": f"Steel rod Ø{config.camshaft_diameter}mm × {config.camshaft_length:.0f}mm",
-             "quantity": 1, "source": "Hardware store"},
+             "quantity": 2 if config.dual_shaft else 1, "source": "Hardware store"},
             {"part": "CA glue (cyanoacrylate)", "quantity": 1,
              "source": "Pour fixer les pièces fixes au châssis"},
             {"part": "Super Lube 21030 (silicone grease)", "quantity": 1,
              "source": "Optionnel — améliore la fluidité"},
         ]
-    return [
-        {"part": f"Motor {config.motor_type} 100:1 6V", "quantity": 1, "source": "Pololu/AliExpress"},
-        {"part": f"Steel rod Ø{config.camshaft_diameter}mm × {config.camshaft_length:.0f}mm",
-         "quantity": 1, "source": "Hardware store"},
-        {"part": f"M{config.screw_diameter:.0f} × 12mm screws", "quantity": 8},
-        {"part": f"M{config.screw_diameter:.0f} nuts", "quantity": 8},
-        {"part": f"M{config.screw_diameter:.0f} heat-set inserts (Ø4mm×5mm)", "quantity": 4,
-         "source": "CNC Kitchen / AliExpress"},
-        {"part": f"E-clip DIN 6799 Ø{config.camshaft_diameter}mm", "quantity": config.num_cams + 1,
-         "source": "Hardware store"},
-        {"part": "Super Lube 21030 (silicone grease)", "quantity": 1},
-    ]
+    else:
+        bom = [
+            {"part": f"Motor {config.motor_type} 100:1 6V", "quantity": 1, "source": "Pololu/AliExpress"},
+            {"part": f"Steel rod Ø{config.camshaft_diameter}mm × {config.camshaft_length:.0f}mm",
+             "quantity": 2 if config.dual_shaft else 1, "source": "Hardware store"},
+            {"part": f"M{config.screw_diameter:.0f} × 12mm screws", "quantity": 8},
+            {"part": f"M{config.screw_diameter:.0f} nuts", "quantity": 8},
+            {"part": f"M{config.screw_diameter:.0f} heat-set inserts (Ø4mm×5mm)", "quantity": 4,
+             "source": "CNC Kitchen / AliExpress"},
+            {"part": f"E-clip DIN 6799 Ø{config.camshaft_diameter}mm", "quantity": config.num_cams + 1,
+             "source": "Hardware store"},
+            {"part": "Super Lube 21030 (silicone grease)", "quantity": 1},
+        ]
+    # Dual-shaft extras
+    if config.dual_shaft:
+        bom.append({"part": f"Sync gear M{config.sync_gear_module}×{config.sync_gear_teeth}t (printed PLA)",
+                     "quantity": 2, "source": "Printed — included in STL"})
+        bom.append({"part": f"E-clip DIN 6799 Ø{config.camshaft_diameter}mm (shaft B)",
+                     "quantity": config.num_cams // 2 + 1, "source": "Hardware store"})
+    return bom
 
 
 # ╔══════════════════════════════════════════════════════════════════╗
@@ -4809,6 +4818,27 @@ def run_real_constraint_checks(gen, chassis_config):
                     f"Joint '{label}': couple gravité faible ({grav_torque:.1f} mNm) — friction pourrait bloquer",
                     "Vérifier que les surfaces de contact sont lisses (ponçage)",
                     value=grav_torque, limit=0.5))
+
+    # ── DUAL-SHAFT GEAR MESH VALIDATION (TROU-73) ──
+    dsa = getattr(gen, '_dual_shaft_assignment', None)
+    if dsa and chassis_config.dual_shaft:
+        gear_data = []
+        for label in ['A', 'B']:
+            gear_data.append({
+                'name': f'sync_gear_{label}',
+                'type': 'spur_involute',
+                'module_mm': chassis_config.sync_gear_module,
+                'teeth': chassis_config.sync_gear_teeth,
+                'pressure_angle_deg': chassis_config.sync_gear_pressure_angle,
+                'thickness_mm': chassis_config.sync_gear_thickness,
+                'pitch_diameter_mm': chassis_config.sync_gear_module * chassis_config.sync_gear_teeth,
+                'center_distance_mm': chassis_config.sync_gear_module * chassis_config.sync_gear_teeth,
+                'bore_diameter_mm': chassis_config.camshaft_diameter + 0.3,
+                'shaft_diameter_mm': chassis_config.camshaft_diameter,
+                'role': 'sync_1to1',
+            })
+        violations.extend(check_trou_73_gear_center_distance(
+            gear_data, chassis_config.camshaft_diameter, chassis_config.width))
 
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
@@ -8935,15 +8965,39 @@ class AutomataGenerator:
         if chassis_config.dual_shaft:
             # ── DUAL-SHAFT: Split cams across 2 shafts ──
             x_off = chassis_config.dual_shaft_x_offset
-            # Alternate cams between shafts for balanced load
-            shaft_A_indices = list(range(0, len(cam_names_ordered), 2))  # even
-            shaft_B_indices = list(range(1, len(cam_names_ordered), 2))  # odd
+            # Load-balanced assignment: sort cams by Rb (largest first),
+            # assign greedily to shaft with fewer total load.
+            # This balances torque & deflection across both shafts.
+            cam_rbs = []
+            for i, cname in enumerate(cam_names_ordered):
+                # cam_names_ordered has 'cam_neck', _cam_designs uses 'neck'
+                bare_name = cname.replace('cam_', '', 1)
+                cd = self._cam_designs.get(bare_name, {})
+                rb = cd.get('Rb_mm', 10.0)
+                cam_rbs.append((i, rb))
+            sorted_cams = sorted(cam_rbs, key=lambda x: x[1], reverse=True)
+            
+            shaft_A_indices = []
+            shaft_B_indices = []
+            load_A, load_B = 0.0, 0.0
+            for idx, rb in sorted_cams:
+                if load_A <= load_B:
+                    shaft_A_indices.append(idx)
+                    load_A += rb
+                else:
+                    shaft_B_indices.append(idx)
+                    load_B += rb
+            # Sort indices for consistent Y-ordering
+            shaft_A_indices.sort()
+            shaft_B_indices.sort()
             # Store assignment for later reference (constraints, BOM, etc.)
             self._dual_shaft_assignment = {
                 'A': shaft_A_indices, 'B': shaft_B_indices,
                 'x_A': -x_off, 'x_B': x_off
             }
-            print(f"  ⚙ Dual-shaft split: A={len(shaft_A_indices)} cams, B={len(shaft_B_indices)} cams")
+            balance_pct = abs(load_A - load_B) / max(load_A + load_B, 1) * 100
+            print(f"  ⚙ Dual-shaft split: A={len(shaft_A_indices)} cams (Σ{load_A:.0f}), "
+                  f"B={len(shaft_B_indices)} cams (Σ{load_B:.0f}) — imbalance {balance_pct:.0f}%")
 
             cam_y_positions = [0.0] * len(cam_names_ordered)
             cam_x_positions = [0.0] * len(cam_names_ordered)
@@ -9126,6 +9180,7 @@ class AutomataGenerator:
                 
                 cam_bounds = cam_mesh.bounds
                 cam_y = (cam_bounds[0][1] + cam_bounds[1][1]) / 2
+                cam_x = (cam_bounds[0][0] + cam_bounds[1][0]) / 2  # dual-shaft: cam X ≠ 0
                 cam_top_z = cam_bounds[1][2]
                 cam_r = max(cam_bounds[1][0] - cam_bounds[0][0],
                             cam_bounds[1][1] - cam_bounds[0][1]) / 2
@@ -9141,7 +9196,7 @@ class AutomataGenerator:
                 # We want: lever_bottom = cam_top_z + 0.2 (contact clearance)
                 fdm_clearance = 0.2  # mm — just enough to not bind, gravity closes it
                 pivot_z = cam_top_z + input_arm + arm_thick / 2 + fdm_clearance
-                pivot_pos = [0, cam_y, pivot_z]
+                pivot_pos = [cam_x, cam_y, pivot_z]  # X from cam (dual-shaft offset)
                 
                 lever_mesh = create_lever_arm(
                     pivot_pos, input_arm, output_arm,
@@ -9689,9 +9744,11 @@ class AutomataGenerator:
         print(f"  Validation: {n_v} violation{'s' if n_v != 1 else ''}")
         print(f"{'─'*60}")
 
+        self._chassis_config = chassis_config  # store for fallback access
         result = {"parts": self.all_parts, "cams": self.cams,
                 "cam_designs": getattr(self, '_cam_designs', {}),
                 "dual_shaft_assignment": getattr(self, '_dual_shaft_assignment', None),
+                "chassis_config": chassis_config,
                 "timing": self.timing_data, "motor": self.motor_check,
                 "validation": self.validation_results,
                 "assembly_violations": self.assembly_violations,
@@ -9782,11 +9839,25 @@ class AutomataGenerator:
         
         # Step 2: Shaft
         step += 1
-        md.append(f"## Étape {step} — Arbre principal\n")
-        md.append(f"1. Insérer l'arbre cannelé (Ø{shaft_dia:.0f}mm, D-flat) "
-                 f"dans les paliers du châssis (bore Ø{bore_free:.1f}mm).")
-        md.append(f"2. Le chanfrein d'entrée ({chamfer}mm @ 45°) guide l'insertion.")
-        md.append(f"3. L'arbre doit **tourner librement** — aucun point dur.")
+        _is_dual = hasattr(self, '_dual_shaft_assignment') and self._dual_shaft_assignment
+        if _is_dual:
+            md.append(f"## Étape {step} — Arbres principaux (dual-shaft)\n")
+            dsa = self._dual_shaft_assignment
+            n_a = len(dsa.get('A', []))
+            n_b = len(dsa.get('B', []))
+            md.append(f"**Configuration double arbre: {n_a} cames arbre A + {n_b} cames arbre B**\n")
+            md.append(f"1. Insérer l'**arbre A** (drive, Ø{shaft_dia:.0f}mm) dans les paliers gauches.")
+            md.append(f"2. Insérer l'**arbre B** (driven, Ø{shaft_dia:.0f}mm) dans les paliers droits.")
+            md.append(f"3. Glisser les **2 engrenages de synchronisation** sur chaque arbre.")
+            md.append(f"4. Aligner les dents pour un engrènement correct.")
+            md.append(f"5. Les deux arbres tournent en **sens opposé** (engrenage direct).\n")
+            md.append(f"> ✅ **Vérif**: tourner un arbre → l'autre tourne aussi, synchro 1:1.\n")
+        else:
+            md.append(f"## Étape {step} — Arbre principal\n")
+            md.append(f"1. Insérer l'arbre cannelé (Ø{shaft_dia:.0f}mm, D-flat) "
+                     f"dans les paliers du châssis (bore Ø{bore_free:.1f}mm).")
+            md.append(f"2. Le chanfrein d'entrée ({chamfer}mm @ 45°) guide l'insertion.")
+            md.append(f"3. L'arbre doit **tourner librement** — aucun point dur.")
         if has_crank:
             md.append(f"4. Clipser un **collier imprimé** sur l'arbre pour le retenir axialement.\n")
         elif eclip_w > 0:
@@ -16648,6 +16719,107 @@ def check_trou_72_infill(
 
 
 # ═══════════════════════════════════════════════════════════════
+# TROU 73 — Gear mesh center distance validation (dual-shaft)
+# ═══════════════════════════════════════════════════════════════
+
+def check_trou_73_gear_center_distance(
+    gears: List[Dict],
+    shaft_diameter_mm: float = 4.0,
+    chassis_width_mm: float = 80.0,
+) -> List[Violation]:
+    """
+    Validate sync gear mesh geometry for dual-shaft configurations.
+    
+    Checks:
+    - Center distance = module × teeth (pitch diameter match)
+    - Gear bore fits shaft with clearance (not too tight, not too loose)
+    - Gears fit within chassis width
+    - Contact ratio ≥ 1.2 for smooth mesh
+    """
+    vs = []
+    
+    sync_gears = [g for g in gears if g.get('role') == 'sync_1to1']
+    if len(sync_gears) < 2:
+        return vs  # no sync pair to validate
+    
+    g = sync_gears[0]  # both should be identical for 1:1
+    m = g.get('module_mm', 1.5)
+    z = g.get('teeth', 20)
+    pa = g.get('pressure_angle_deg', 20.0)
+    bore = g.get('bore_diameter_mm', 4.3)
+    shaft_d = g.get('shaft_diameter_mm', shaft_diameter_mm)
+    center_dist = g.get('center_distance_mm', m * z)
+    
+    # Check 1: center distance consistency
+    expected_cd = m * z
+    if abs(center_dist - expected_cd) > 0.1:
+        vs.append(Violation(
+            "TROU-73", Severity.ERROR,
+            f"Gear center distance {center_dist:.1f}mm ≠ m×z = {expected_cd:.1f}mm. "
+            f"Gears won't mesh correctly.",
+            suggestion=f"Set center_distance = module × teeth = {expected_cd:.1f}mm.",
+            value=center_dist, limit=expected_cd,
+        ))
+    
+    # Check 2: bore clearance (shaft should fit with 0.2-0.5mm clearance)
+    clearance = bore - shaft_d
+    if clearance < 0.1:
+        vs.append(Violation(
+            "TROU-73", Severity.ERROR,
+            f"Gear bore Ø{bore:.1f}mm too tight for Ø{shaft_d:.1f}mm shaft "
+            f"(clearance {clearance:.2f}mm < 0.1mm). Won't assemble.",
+            suggestion=f"Use bore ≥ {shaft_d + 0.2:.1f}mm for FDM clearance.",
+            value=clearance, limit=0.1,
+        ))
+    elif clearance > 1.0:
+        vs.append(Violation(
+            "TROU-73", Severity.WARNING,
+            f"Gear bore Ø{bore:.1f}mm loose on Ø{shaft_d:.1f}mm shaft "
+            f"(clearance {clearance:.2f}mm > 1mm). May wobble.",
+            suggestion="Use D-flat or set screw for alignment.",
+            value=clearance, limit=1.0,
+        ))
+    
+    # Check 3: gears fit in chassis
+    outside_d = m * (z + 2)  # addendum circle
+    total_span = center_dist + outside_d  # both gears side by side
+    if total_span > chassis_width_mm * 0.8:
+        vs.append(Violation(
+            "TROU-73", Severity.WARNING,
+            f"Gear span {total_span:.1f}mm uses >{80}% of chassis width "
+            f"{chassis_width_mm:.0f}mm. Tight fit.",
+            suggestion="Consider smaller module or fewer teeth.",
+            value=total_span, limit=chassis_width_mm * 0.8,
+        ))
+    
+    # Check 4: contact ratio (should be ≥ 1.2 for smooth operation)
+    pa_rad = np.radians(pa)
+    # Approximate contact ratio for equal 1:1 spur gears
+    # CR ≈ (√(ra² - rb²) - rp×sin(α)) × 2 / (π×m×cos(α))
+    rp = m * z / 2  # pitch radius
+    ra = rp + m  # addendum radius
+    rb = rp * np.cos(pa_rad)  # base radius
+    if ra > rb:
+        cr = 2 * (np.sqrt(ra**2 - rb**2) - rp * np.sin(pa_rad)) / (np.pi * m * np.cos(pa_rad))
+        if cr < 1.2:
+            vs.append(Violation(
+                "TROU-73", Severity.WARNING,
+                f"Contact ratio {cr:.2f} < 1.2. Gear mesh may be noisy/rough.",
+                suggestion="Increase teeth count or decrease pressure angle.",
+                value=cr, limit=1.2,
+            ))
+        else:
+            vs.append(Violation(
+                "TROU-73", Severity.INFO,
+                f"Sync gear mesh validated: center_dist={center_dist:.0f}mm, "
+                f"bore_clearance={clearance:.2f}mm, contact_ratio={cr:.2f}.",
+                value=cr, limit=1.2,
+            ))
+    
+    return vs
+
+
+# ═══════════════════════════════════════════════════════════════
 # TESTS
 # ═══════════════════════════════════════════════════════════════
 
@@ -18290,6 +18462,15 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
         md = gen_result['motor']
         data['timing']['motor_margin_pct'] = md.get('margin_percent', 0)
     
+    # ── Update chassis dims from actual config (not defaults) ──
+    cc_actual = gen_result.get('chassis_config') if gen_result else None
+    if cc_actual:
+        data['chassis']['width_mm'] = cc_actual.width
+        data['chassis']['length_mm'] = cc_actual.depth
+        data['chassis']['height_mm'] = cc_actual.total_height
+        data['chassis']['wall_thickness_mm'] = cc_actual.wall_thickness
+        data['shaft']['diameter_mm'] = cc_actual.camshaft_diameter
+    
     # ── Motor from scene ──
     if hasattr(scene, 'motor_stall_torque_mNm'):
         data['motor']['stall_torque_mNm'] = scene.motor_stall_torque_mNm
@@ -18351,6 +18532,30 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
             data['shaft']['total_length_mm'] = worst_len
             data['shaft']['loads'] = worst_loads
             data['shaft']['dual_shaft'] = True
+            # ── P2: Extract sync gear data for constraint validation ──
+            cc = gen_result.get('chassis_config')
+            if cc and hasattr(cc, 'sync_gear_module'):
+                gear_m = cc.sync_gear_module
+                gear_z = cc.sync_gear_teeth
+                gear_pa = cc.sync_gear_pressure_angle
+                gear_t = cc.sync_gear_thickness
+                center_dist = gear_m * gear_z
+                for label in ['A', 'B']:
+                    data['gears'].append({
+                        'name': f'sync_gear_{label}',
+                        'type': 'spur_involute',
+                        'module_mm': gear_m,
+                        'teeth': gear_z,
+                        'pressure_angle_deg': gear_pa,
+                        'thickness_mm': gear_t,
+                        'pitch_diameter_mm': gear_m * gear_z,
+                        'center_distance_mm': center_dist,
+                        'bore_diameter_mm': cc.camshaft_diameter + 0.3,
+                        'shaft_diameter_mm': cc.camshaft_diameter,
+                        'torque_Nm': 0.05,  # typical for hand-crank automata
+                        'target_hours': 100,
+                        'role': 'sync_1to1',
+                    })
         else:
             data['shaft']['total_length_mm'] = sum(
                 c.get('thickness_mm', 5) + 2 for c in data['cams']
@@ -18414,9 +18619,11 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
                 'parts': gen.all_parts,
                 'cam_meshes': gen.cam_meshes,
                 'cam_designs': getattr(gen, '_cam_designs', {}),
-                'cams': getattr(gen.scene, 'compiled_cams', []) if not isinstance(getattr(gen.scene, 'compiled_cams', ''), str) else [],
-                'timing': getattr(gen, '_timing_data', {}),
-                'motor': getattr(gen, '_motor_result', {}),
+                'dual_shaft_assignment': getattr(gen, '_dual_shaft_assignment', None),
+                'chassis_config': getattr(gen, '_chassis_config', None),
+                'cams': getattr(gen, 'cams', []),
+                'timing': getattr(gen, 'timing_data', getattr(gen, '_timing_data', {})),
+                'motor': getattr(gen, 'motor_check', getattr(gen, '_motor_result', {})),
             }
         design_data = extract_design_data(gen.scene, result)
     
@@ -18567,6 +18774,12 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
             g.get('torque_Nm', 0.05), g.get('module_mm', 1.5),
             g.get('teeth', 20), timing.get('rpm', 2),
             g.get('target_hours', 100)), verbose)
+    # Dual-shaft gear mesh validation
+    if gears:
+        _chassis_w = design_data.get('chassis', {}).get('width_mm', 80)
+        _shaft_d = design_data.get('shaft', {}).get('diameter_mm', 4.0)
+        _safe_check(report, 'B9', lambda: check_trou_73_gear_center_distance(
+            gears, _shaft_d, _chassis_w), verbose)
     
     if verbose:
         print(report.summary())

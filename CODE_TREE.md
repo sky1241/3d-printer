@@ -1,6 +1,7 @@
 # CODE_TREE — automata_unified_v4.py
-# Generated: 2026-02-13 (post cam skip-pairs fix)
-# Total: 20217 lines, 793 entries
+# Generated: 2026-02-13 (post dual-shaft DUAL-001 fix)
+# Total: 20447 lines
+# Last commit: dual-shaft P1/P2 fixes (lever X-offset, TROU-73, BOM, assembly guide)
 
 L  108 | # ══════════════════════════════════════════════════════════════════════
 L  110 | # ══════════════════════════════════════════════════════════════════════
