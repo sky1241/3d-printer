@@ -1,97 +1,92 @@
 # 🐛 BUG TRACKER v2 — Automata Generator v4
 # Dernière mise à jour : 13 février 2026
-# Commit actuel : f946ed2
+# Commit actuel : 0865043
 # Tests : 17/17 builders ✅ | 9/9 presets ✅ | 13/13 debug ✅
 
 ---
 
 ## LÉGENDE
 - ✅ CORRIGÉ — Vérifié par tests, pushé
-- 🔴 OUVERT — À fixer
+- 🔴 OUVERT — À fixer (nécessite dual-shaft = deep research)
 - ⬜ FUTUR — Phase ultérieure
 
 ---
 
-## 🔴 BUGS OUVERTS
+## 🔴 BUGS OUVERTS — Nécessitent DUAL-SHAFT (deep research)
 
-### BUG-011 : SHAFT_DEFLECTION_TOO_HIGH (7/17 espèces)
-- **Sévérité** : P1
-- **Impact** : ant, spider, scorpion, crab, lobster, octopus, dragon
-- **Cause** : Arbre Ø4mm trop flexible quand >6 cames. Flèche max: 7.3mm (scorpion)
-- **Fix** : Dual-shaft ou arbre Ø6mm — **DEEP RESEARCH en cours**
+### BUG-012 : PLATE_OVERSIZED_XY — arbre trop long (6/17)
+- **Impact** : spider(255mm), scorpion(316mm), crab(241mm), lobster(262mm), octopus(234mm), dragon(289mm)
+- **Seuil** : 220mm (lit Ender-3)
+- **Fix** : Dual-shaft split avec engrenage sync → DEEP RESEARCH
+- **Note** : cam_spacing déjà réduit de 8→6mm pour >6 cames
 
-### BUG-012 : PLATE_OVERSIZED_XY (5/17 espèces)
-- **Sévérité** : P1
-- **Impact** : spider, scorpion, crab, lobster, octopus, dragon
-- **Pires cas** : dragon 332mm, scorpion 434mm (lit=220mm)
-- **Fix** : Dual-shaft split — lié à BUG-011
+### BUG-011 : SHAFT_DEFLECTION_TOO_HIGH (3/17)
+- **Impact** : scorpion(0.48mm), lobster(0.34mm), dragon(0.43mm)
+- **Seuil** : 0.3mm
+- **Note** : Ø6mm auto-scale a fixé 8 espèces, les 3 restantes ont trop de cames
+- **Fix** : Dual-shaft split (même fix que BUG-012)
 
-### BUG-013 : MOTOR_OVERLOADED (3/17 espèces)
-- **Sévérité** : P2
-- **Impact** : scorpion (-40.8%), lobster (-19.2%), crab (-8.3%)
-- **Fix** : Auto-réduction amplitudes ou engrenage réduction
-
-### BUG-015 : COLLISION guide∩pin/collar (5/17 espèces)
-- **Sévérité** : P3
-- **Impact** : dolphin, crab, lobster, snail, t-rex
-- **Cause** : Pins/collars (2-8mm) overlap léger avec guides
-- **Fix** : Décaler pins ou réduire rayon collars
+### BUG-013 : MOTOR_OVERLOADED (3/17)
+- **Impact** : scorpion(-40.8%), lobster(-19.2%), crab(-8.3%)
+- **Note** : Couple dominé par spring_force constante (pas amplitude)
+- **Fix** : Dual-shaft split le couple en 2 moteurs
 
 ---
 
-## ✅ BUGS CORRIGÉS
+## ✅ BUGS CORRIGÉS — Session 13 février 2026
 
-| Bug | Description | Fix | Commit | Impact |
-|-----|-------------|-----|--------|--------|
-| **BUG-010** | **wall∩follower COLLISION 13/17** | **Guides espacés dans zone utile X** | **`f946ed2`** | **13→0 collisions, 2→7 espèces clean** |
-| BUG-009 | CAM_ROLLER_LARGE rf/Rb>0.35 | ratio→0.30, floor Rb≥rf/0.35 | `7418f59` | 17/17 clean |
-| BUG-008 | run_all_constraints crash | isinstance check | `521e5b7` | 17/17 pipeline |
-| BUG-007 | A1_STRICT U-slots | Boolean CSG | `1601960` | euler=0 |
-| BUG-006 | Rb>50mm oversized | Cap 50mm + binary search | `0872f00` | 0 oversized |
-| BUG-005 | Leviers manquants | ALL lever_needed | `c33b092` | 13/13 |
-| BUG-004 | Dead code snap | UNUSED tag | `bcb829f` | Clean |
-| BUG-003 | Gap came→levier | +0.2mm FDM | `42b9af7` | 0.2mm |
-| BUG-002 | Figurine détachée | Pushrod+socket | `41162e6` | 13/13 |
-| BUG-001 | Follower guide = box | U-channel OK | N/A | 🟡 |
-| Z-AXIS | Cames/murs/followers | Rotation+translation | Multiple | 17/17 |
+| Bug | Description | Fix | Commit |
+|-----|-------------|-----|--------|
+| BUG-015 | Wall boss extent miscalculated → collisions reviennent avec Ø6mm | 2×boss_r au lieu de wall_thickness | `0865043` |
+| BUG-010 | wall∩follower COLLISION 13/17 espèces | Guide spacing dans zone utile + auto-expand | `f946ed2` |
+| BUG-009 | CAM_ROLLER_LARGE rf/Rb>0.35 | ratio 0.30, floor Rb | `7418f59` |
+| BUG-008 | run_all_constraints crash AutomataScene | isinstance check | `521e5b7` |
+| BUG-007 | A1_STRICT murs U-slots | CSG boolean | `1601960` |
+| BUG-006 | Cames Rb>50mm | Cap + binary search | `0872f00` |
+| BUG-005 | Leviers manquants | ALL lever_needed | `c33b092` |
+| BUG-004 | Dead code snap | UNUSED tag | `bcb829f` |
+| BUG-003 | Gap came→levier 1.5mm | +0.2mm FDM | `42b9af7` |
+| BUG-002 | Figurine détachée | Pushrod+socket | `41162e6` |
+| BUG-001 | Follower guide = box | U-channel OK | 🟡 Reclassé |
+| Z-AXIS | Cames/murs/followers désalignés | Rotation+translation | Multiple |
+| AUTO-1 | Shaft Ø4mm trop flexible >5 cames | Auto Ø6mm | `0865043` |
+| AUTO-2 | Cam spacing trop large >6 cames | Auto 8→6mm | `0865043` |
 
 ---
 
-## 📊 MATRICE ESPÈCE × BUG (post BUG-010 fix)
+## 📊 MATRICE ESPÈCE × ÉTAT
 
-| Espèce | Parts | Shaft | Plate | Motor | Minor | Clean? |
-|--------|-------|-------|-------|-------|-------|--------|
-| sunflower | 13 | — | — | — | — | ✅ |
-| snake | 20 | — | — | — | — | ✅ |
-| butterfly | 27 | — | — | — | — | ✅ |
-| eagle | 34 | — | — | — | — | ✅ |
-| human | 41 | — | — | — | — | ✅ |
-| centipede | 34 | — | — | — | — | ✅ |
-| chat | 48 | — | — | — | — | ✅ |
-| dolphin | 27 | — | — | — | pin | ❌ |
-| snail | 34 | — | — | — | pin | ❌ |
-| t-rex | 41 | — | — | — | pin | ❌ |
-| ant | 55 | ⚠ | — | — | — | ❌ |
-| octopus | 62 | ⚠ | ⚠ | — | — | ❌ |
-| spider | 69 | ⚠ | ⚠ | — | — | ❌ |
-| dragon | 69 | ⚠ | ⚠ | — | — | ❌ |
-| crab | 76 | ⚠ | ⚠ | ⚠ | pin | ❌ |
-| lobster | 83 | ⚠ | ⚠ | ⚠ | pin | ❌ |
-| scorpion | 97 | ⚠ | ⚠ | ⚠ | — | ❌ |
+| Espèce | Parts | Shaft | Status |
+|--------|-------|-------|--------|
+| sunflower | 13 | Ø4mm | ✅ CLEAN |
+| snake | 20 | Ø4mm | ✅ CLEAN |
+| dolphin | 27 | Ø4mm | ✅ CLEAN |
+| butterfly | 27 | Ø4mm | ✅ CLEAN |
+| eagle | 34 | Ø4mm | ✅ CLEAN |
+| centipede | 34 | Ø6mm | ✅ CLEAN |
+| snail | 34 | Ø4mm | ✅ CLEAN |
+| human | 41 | Ø4mm | ✅ CLEAN |
+| t-rex | 41 | Ø6mm | ✅ CLEAN |
+| chat | 48 | Ø6mm | ✅ CLEAN |
+| ant | 55 | Ø6mm | ✅ CLEAN |
+| octopus | 62 | Ø6mm | ❌ OVERSIZED |
+| spider | 69 | Ø6mm | ❌ OVERSIZED |
+| dragon | 69 | Ø6mm | ❌ SHAFT+OVER |
+| crab | 76 | Ø6mm | ❌ OVER+MOTOR |
+| lobster | 83 | Ø6mm | ❌ SHAFT+OVER+MOTOR |
+| scorpion | 97 | Ø6mm | ❌ SHAFT+OVER+MOTOR |
 
-**Score : 7/17 clean (était 2/17)**
+**Score : 11/17 clean (65%) — was 2/17 (12%)**
 
 ---
 
 ## ⬜ AMÉLIORATIONS FUTURES
 
-| ID | Description | Difficulté |
+| ID | Description | Bloqué par |
 |----|-------------|------------|
-| FUTUR-001 | Bell-crank mouvement horizontal | Moyenne |
-| FUTUR-002 | Engrenages imprimés rotation 360° | Haute |
-| FUTUR-003 | Simulation cinématique 0→360° | Moyenne |
-| FUTUR-004 | Scaling global 50-200% | Faible |
-| FUTUR-005 | STL export par espèce | Faible |
-| FUTUR-006 | Instructions assemblage PDF | Moyenne |
-| FUTUR-007 | Profils slicer | Faible |
-| FUTUR-008 | BOM complet | Faible |
+| FUTUR-001 | Dual-shaft >6 cames | Deep research |
+| FUTUR-002 | Engrenages imprimés | Deep research |
+| FUTUR-003 | Simulation cinématique | — |
+| FUTUR-004 | STL export par espèce | — |
+| FUTUR-005 | Instructions assemblage PDF | — |
+| FUTUR-006 | BOM complet | — |
