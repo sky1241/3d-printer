@@ -7706,13 +7706,42 @@ class AutomataGenerator:
                 chassis_config.compute_camshaft_length()
 
         guides = []
+        n_tracks = len(self.scene.tracks)
+        # ── Compute usable X zone between walls ──
+        # Wall inner edge ≈ width/2 - wall_thickness (ignoring boss which extends inward)
+        # Guide total footprint = width + 2*wall_thickness (from create_linear_follower_guide)
+        _guide_w = 8.0  # FollowerGuide default width
+        _guide_total = _guide_w + 2 * chassis_config.wall_thickness
+        _guide_half = _guide_total / 2
+        _wall_inner = chassis_config.width / 2 - chassis_config.wall_thickness
+        _clearance = 1.5  # mm gap between guide edge and wall
+        _x_limit = _wall_inner - _guide_half - _clearance
+        # Compute evenly spaced X positions within [-_x_limit, +_x_limit]
+        if n_tracks <= 1:
+            _guide_xs = [0.0]
+        else:
+            _usable = 2 * _x_limit
+            _min_gap = _guide_total + 1.0  # minimum spacing to avoid guide-on-guide overlap
+            _needed = (n_tracks - 1) * _min_gap
+            if _needed > _usable:
+                # Expand chassis width to fit all guides
+                _new_w = round((2 * (_guide_half + _clearance + chassis_config.wall_thickness) + _needed) / 5) * 5
+                _new_w = min(_new_w, 220.0)  # print bed cap
+                if _new_w > chassis_config.width:
+                    chassis_config.width = _new_w
+                    chassis_config.compute_camshaft_length()
+                    _wall_inner = chassis_config.width / 2 - chassis_config.wall_thickness
+                    _x_limit = _wall_inner - _guide_half - _clearance
+                    _usable = 2 * _x_limit
+                    print(f"  ⚠ chassis width auto-expanded to {chassis_config.width}mm (fit {n_tracks} guides)")
+            _spacing = _usable / (n_tracks - 1)
+            _guide_xs = [-_x_limit + i * _spacing for i in range(n_tracks)]
         for i, track in enumerate(self.scene.tracks):
             amp = max((p.amplitude for p in track.primitives if p.kind != "PAUSE"), default=10)
             fdir = getattr(track, 'follower_direction', 'vertical')
-            # Follower just above the cam: Z = shaft_center + max_cam_radius + small gap
-            follower_z = cz + amp + 10  # above cam top
+            follower_z = cz + amp + 10
             guides.append(FollowerGuide(
-                position=(i*20 - (len(self.scene.tracks)-1)*10, 20, follower_z), stroke_mm=amp,
+                position=(_guide_xs[i], 20, follower_z), stroke_mm=amp,
                 direction=fdir))
         self.chassis_parts = generate_chassis(chassis_config, len(self.cams), guides)
         print(f"  · Châssis: {len(self.chassis_parts)} pièces")
