@@ -1,5 +1,5 @@
 # 🗺️ CODEMAP v4 — automata_unified_v4.py (18615 lignes)
-# Dernière mise à jour: 13 février 2026 | Commit: 7cc2bd3
+# Dernière mise à jour: 13 février 2026 | Commit: d7053bd
 # 17/17 espèces clean | 95 checks | 7 auto-scaling rules
 
 ---
@@ -384,6 +384,7 @@ PROBLÈME ?
 
 | Commit | Description | Impact |
 |--------|-------------|--------|
+| `d7053bd` | Lever sweep horizontal proj | LEVER_SWEEP 9→1 (blacksmith by design) |
 | `7cc2bd3` | Auto-clamp Rb ≥ Rb_min | RB_SMALL 10→0, ROLLER_BIG 5→0 |
 | `4771f31` | Propagate phi_limit_deg | RB_SMALL 13→10 |
 | `b2d5a46` | Hertz/PV + BOM + PTC | HERTZ 16→0, BOM 9→0, FUSE 9→0 |
