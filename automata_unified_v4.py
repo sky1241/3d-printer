@@ -6822,6 +6822,161 @@ class FigurineConfig:
     chassis_type: str = 'box'  # 'box', 'frame', 'central', 'flat'
 
 
+# ═══════════════════════════════════════════════════════════════════
+# JointFactory — Générateur d'articulations imprimables (ART-001b)
+# ═══════════════════════════════════════════════════════════════════
+
+class JointFactory:
+    """Génère des articulations FDM imprimables (pin joints, ball joints, etc.).
+
+    Chaque méthode retourne des meshes trimesh prêts à être positionnés et
+    intégrés dans l'assemblage. Les clearances suivent les données de
+    RESEARCH_ARTICULATED.py (FDM PLA, nozzle 0.4mm, layer 0.2mm).
+
+    Usage:
+        pin, hole = JointFactory.create_pin_joint(d=3.0, length=8.0)
+        # pin  = cylindre plein Ø3mm  (pièce séparée: l'axe)
+        # hole = cylindre Ø3.3mm      (à soustraire de la pièce hôte)
+    """
+
+    # Clearances FDM PLA (radial, par côté) — source: RESEARCH_ARTICULATED.py
+    # Format: diamètre_axe → clearance_radiale_nominale
+    PIN_CLEARANCE_TABLE = {
+        3.0: 0.15,  # trou = 3.3mm
+        4.0: 0.15,  # trou = 4.3mm
+        5.0: 0.15,  # trou = 5.3mm
+        6.0: 0.15,  # trou = 6.3mm
+    }
+    DEFAULT_CLEARANCE = 0.15   # mm radial par côté
+    MIN_PIN_DIAMETER  = 2.0    # mm — en dessous c'est trop fragile
+    MAX_PIN_DIAMETER  = 10.0   # mm — au-dessus c'est surdimensionné
+    CHAMFER_DEPTH     = 0.3    # mm — chanfrein entrée trou (imprimabilité)
+    CHAMFER_ANGLE     = 45.0   # degrés
+    SEGMENTS          = 32     # facettes cylindres (qualité mesh)
+
+    @staticmethod
+    def create_pin_joint(
+        diameter: float = 3.0,
+        length: float = 8.0,
+        clearance: float = None,
+        with_chamfer: bool = True,
+    ) -> tuple:
+        """Crée un pivot cylindrique imprimable (axe + trou).
+
+        Args:
+            diameter:  Diamètre de l'axe en mm (3.0–6.0 recommandé)
+            length:    Longueur de l'axe en mm
+            clearance: Jeu radial en mm (None = auto depuis table)
+            with_chamfer: Ajouter chanfrein 0.3mm sur entrée du trou
+
+        Returns:
+            (pin_mesh, hole_mesh): tuple de trimesh.Trimesh
+              - pin_mesh:  cylindre plein Ø=diameter (l'axe, pièce séparée)
+              - hole_mesh: cylindre Ø=diameter+2×clearance (à soustraire du host)
+
+        Raises:
+            ValueError: si diameter < 2mm ou length < 1mm
+        """
+        # ── Validation ──
+        if diameter < JointFactory.MIN_PIN_DIAMETER:
+            raise ValueError(
+                f"Pin diameter {diameter}mm < minimum {JointFactory.MIN_PIN_DIAMETER}mm "
+                f"(trop fragile pour FDM PLA)")
+        if diameter > JointFactory.MAX_PIN_DIAMETER:
+            raise ValueError(
+                f"Pin diameter {diameter}mm > maximum {JointFactory.MAX_PIN_DIAMETER}mm")
+        if length < 1.0:
+            raise ValueError(f"Pin length {length}mm < minimum 1.0mm")
+
+        # ── Clearance auto ──
+        if clearance is None:
+            clearance = JointFactory.PIN_CLEARANCE_TABLE.get(
+                diameter, JointFactory.DEFAULT_CLEARANCE)
+
+        seg = JointFactory.SEGMENTS
+
+        # ── Axe (pin) ──
+        pin_mesh = trimesh.creation.cylinder(
+            radius=diameter / 2.0,
+            height=length,
+            sections=seg,
+        )
+        # Centré sur Z=0, on le laisse comme ça (sera repositionné par l'appelant)
+
+        # ── Trou (hole) — à soustraire de la pièce hôte ──
+        hole_radius = (diameter + 2.0 * clearance) / 2.0
+        hole_mesh = trimesh.creation.cylinder(
+            radius=hole_radius,
+            height=length + 0.2,  # +0.2mm pour traverser proprement
+            sections=seg,
+        )
+
+        # ── Chanfrein optionnel (cône d'entrée) ──
+        if with_chamfer:
+            ch = JointFactory.CHAMFER_DEPTH
+            chamfer_r = hole_radius + ch  # rayon élargi au bord
+            # Cône tronqué en haut du trou
+            chamfer_top = trimesh.creation.cone(
+                radius=chamfer_r,
+                height=ch,
+                sections=seg,
+            )
+            # Positionner au sommet du trou
+            chamfer_top.apply_translation([0, 0, length / 2.0])
+            # Cône tronqué en bas du trou
+            chamfer_bot = trimesh.creation.cone(
+                radius=chamfer_r,
+                height=ch,
+                sections=seg,
+            )
+            chamfer_bot.apply_translation([0, 0, -length / 2.0])
+            # Union des 3 volumes pour le trou complet
+            hole_mesh = trimesh.util.concatenate([hole_mesh, chamfer_top, chamfer_bot])
+
+        return pin_mesh, hole_mesh
+
+    @staticmethod
+    def pin_hole_diameter(pin_diameter: float, clearance: float = None) -> float:
+        """Retourne le diamètre du trou pour un axe donné.
+
+        Utile pour les constraint checks sans générer de mesh.
+        """
+        if clearance is None:
+            clearance = JointFactory.PIN_CLEARANCE_TABLE.get(
+                pin_diameter, JointFactory.DEFAULT_CLEARANCE)
+        return pin_diameter + 2.0 * clearance
+
+    @staticmethod
+    def pin_fits_in_hole(pin_diameter: float, hole_diameter: float) -> bool:
+        """Vérifie qu'un axe rentre dans un trou (avec clearance positive)."""
+        return hole_diameter > pin_diameter
+
+    @staticmethod
+    def calculate_amplitude(pushrod_travel: float, lever_arm: float) -> float:
+        """Calcule l'amplitude angulaire (degrés) d'un pivot.
+
+        θ = asin(Δ_pushrod / R_bras)
+
+        Args:
+            pushrod_travel: amplitude linéaire du pushrod (mm)
+            lever_arm: longueur du bras de levier (mm)
+
+        Returns:
+            Amplitude en degrés
+
+        Raises:
+            ValueError: si pushrod_travel > lever_arm (impossible)
+        """
+        if lever_arm <= 0:
+            raise ValueError(f"Lever arm must be > 0, got {lever_arm}")
+        ratio = pushrod_travel / lever_arm
+        if abs(ratio) > 1.0:
+            raise ValueError(
+                f"Pushrod travel ({pushrod_travel}mm) > lever arm ({lever_arm}mm): "
+                f"ratio {ratio:.2f} > 1.0, impossible geometry")
+        return math.degrees(math.asin(ratio))
+
+
 class FigurineBuilder:
     """Génère une figurine paramétrique en CSG simple.
 
