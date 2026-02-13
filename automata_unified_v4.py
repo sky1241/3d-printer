@@ -6952,6 +6952,85 @@ class JointFactory:
         return hole_diameter > pin_diameter
 
     @staticmethod
+    def create_pushrod(
+        start: tuple,
+        end: tuple,
+        diameter: float = 3.0,
+        obstacles: list = None,
+    ) -> 'trimesh.Trimesh':
+        """Crée un pushrod (cylindre) de start à end.
+
+        Cas simple: ligne droite. Si obstacles fournis et intersection détectée,
+        ajoute un point intermédiaire pour contourner.
+
+        Args:
+            start:     Point 3D départ (tip du levier)
+            end:       Point 3D arrivée (socket sur partie mobile)
+            diameter:  Diamètre du pushrod (mm)
+            obstacles: Liste de trimesh.Trimesh à éviter (optionnel)
+
+        Returns:
+            pushrod_mesh: trimesh.Trimesh (cylindre ou polycylindre)
+        """
+        start = np.array(start, dtype=float)
+        end = np.array(end, dtype=float)
+        seg = JointFactory.SEGMENTS
+
+        def _make_segment(p0, p1, d):
+            """Crée un segment cylindrique de p0 à p1."""
+            vec = p1 - p0
+            length = np.linalg.norm(vec)
+            if length < 0.1:
+                return trimesh.creation.cylinder(radius=d/2, height=0.1, sections=seg)
+            direction = vec / length
+
+            cyl = trimesh.creation.cylinder(radius=d/2, height=length, sections=seg)
+            # Orienter le cylindre (default Z) vers direction
+            z = np.array([0.0, 0.0, 1.0])
+            if abs(np.dot(z, direction)) < 0.9999:
+                rot_ax = np.cross(z, direction)
+                rot_ax = rot_ax / np.linalg.norm(rot_ax)
+                ang = np.arccos(np.clip(np.dot(z, direction), -1, 1))
+                cyl.apply_transform(trimesh.transformations.rotation_matrix(ang, rot_ax))
+            elif np.dot(z, direction) < 0:
+                cyl.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
+            # Positionner au milieu du segment
+            mid = (p0 + p1) / 2.0
+            cyl.apply_translation(mid)
+            return cyl
+
+        # ── Cas simple: ligne droite ──
+        rod = _make_segment(start, end, diameter)
+
+        # ── Check obstacles et contournement ──
+        if obstacles:
+            for obs in obstacles:
+                try:
+                    # Test intersection rapide via bounding box
+                    if rod.bounding_box.intersection(obs.bounding_box).volume > 0:
+                        # Contournement: point intermédiaire décalé
+                        mid = (start + end) / 2.0
+                        # Décaler perpendiculairement à la direction start→end
+                        direction = end - start
+                        direction = direction / np.linalg.norm(direction)
+                        # Trouver une perpendiculaire
+                        perp = np.array([1, 0, 0]) if abs(direction[0]) < 0.9 else np.array([0, 1, 0])
+                        offset_dir = np.cross(direction, perp)
+                        offset_dir = offset_dir / np.linalg.norm(offset_dir)
+                        # Décaler de 2× le diamètre de l'obstacle
+                        offset = max(diameter * 3, 5.0)
+                        mid_offset = mid + offset_dir * offset
+                        # 2 segments
+                        seg1 = _make_segment(start, mid_offset, diameter)
+                        seg2 = _make_segment(mid_offset, end, diameter)
+                        rod = trimesh.util.concatenate([seg1, seg2])
+                        break  # Un seul contournement
+                except Exception:
+                    pass  # Si check échoue, garder ligne droite
+
+        return rod
+
+    @staticmethod
     def calculate_pushrod_attach(
         joint_pos: tuple,
         joint_axis: tuple,
