@@ -4446,6 +4446,9 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('collar_R_', 'pin_lever_'),  # collar on pin
         ('collar_L_', 'cam_'),  # collar near cam
         ('collar_R_', 'cam_'),  # collar near cam
+        ('pin_lever_', 'follower_guide_'),  # pin near follower guide (expected proximity)
+        ('collar_L_', 'follower_guide_'),  # collar near follower guide
+        ('collar_R_', 'follower_guide_'),  # collar near follower guide
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -7553,6 +7556,18 @@ class AutomataGenerator:
                                       drive_mode=getattr(self.scene, '_drive_mode', 'motor'),
                                       chassis_type=getattr(self.scene, '_chassis_type', 'box'))
         chassis_config.__post_init__()  # apply crank overrides if needed
+
+        # ── AUTO-SCALE: shaft diameter & spacing based on cam count ──
+        n_cams = len(self.cams)
+        if chassis_config.drive_mode != 'crank' and n_cams > 5:
+            chassis_config.camshaft_diameter = 6.0  # Ø6mm steel rod (5× less deflection)
+            chassis_config.bearing_clearance = 0.30  # slightly more clearance for Ø6
+            print(f"  ⚙ Auto-scale: Ø6mm shaft ({n_cams} cams > 5)")
+        if n_cams > 6:
+            chassis_config.cam_spacing = 6.0  # tighter spacing to reduce total length
+            print(f"  ⚙ Auto-scale: cam_spacing=6mm ({n_cams} cams > 6)")
+        chassis_config.compute_camshaft_length()
+
         cz = chassis_config.shaft_center_z  # shaft height for cam/follower alignment
         cam_thickness = 5.0
 
@@ -7708,12 +7723,15 @@ class AutomataGenerator:
         guides = []
         n_tracks = len(self.scene.tracks)
         # ── Compute usable X zone between walls ──
-        # Wall inner edge ≈ width/2 - wall_thickness (ignoring boss which extends inward)
-        # Guide total footprint = width + 2*wall_thickness (from create_linear_follower_guide)
+        # Wall inner edge = width/2 - max(wall_thickness, 2*boss_r) 
+        # Boss extends inward when bore is larger than wall thickness
         _guide_w = 8.0  # FollowerGuide default width
         _guide_total = _guide_w + 2 * chassis_config.wall_thickness
         _guide_half = _guide_total / 2
-        _wall_inner = chassis_config.width / 2 - chassis_config.wall_thickness
+        _bore_r = chassis_config.camshaft_diameter / 2 + chassis_config.bearing_clearance
+        _boss_r = _bore_r + 1.5  # minimum wall around bore
+        _wall_extent = max(chassis_config.wall_thickness, 2 * _boss_r)  # actual wall footprint in X
+        _wall_inner = chassis_config.width / 2 - _wall_extent
         _clearance = 1.5  # mm gap between guide edge and wall
         _x_limit = _wall_inner - _guide_half - _clearance
         # Compute evenly spaced X positions within [-_x_limit, +_x_limit]
@@ -7725,12 +7743,12 @@ class AutomataGenerator:
             _needed = (n_tracks - 1) * _min_gap
             if _needed > _usable:
                 # Expand chassis width to fit all guides
-                _new_w = round((2 * (_guide_half + _clearance + chassis_config.wall_thickness) + _needed) / 5) * 5
+                _new_w = round((2 * (_guide_half + _clearance + _wall_extent) + _needed) / 5) * 5
                 _new_w = min(_new_w, 220.0)  # print bed cap
                 if _new_w > chassis_config.width:
                     chassis_config.width = _new_w
                     chassis_config.compute_camshaft_length()
-                    _wall_inner = chassis_config.width / 2 - chassis_config.wall_thickness
+                    _wall_inner = chassis_config.width / 2 - _wall_extent
                     _x_limit = _wall_inner - _guide_half - _clearance
                     _usable = 2 * _x_limit
                     print(f"  ⚠ chassis width auto-expanded to {chassis_config.width}mm (fit {n_tracks} guides)")
