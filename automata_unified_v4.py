@@ -5667,6 +5667,17 @@ def create_turtle_simple(style=MotionStyle.FLUID):
         MotionPrimitive("LIFT", 8, 120, law, 1), MotionPrimitive("PAUSE", beta=60),
         MotionPrimitive("LIFT", 8, 120, law, -1), MotionPrimitive("PAUSE", beta=60)])]
     scene._preset_name = "turtle_simple"
+    # Figurine: tortue quadrupède avec carapace
+    scene._figurine_cfg = FigurineConfig(
+        name="Tortue", body_type="quadruped", height=45.0,
+        head_ratio=0.22, n_legs=4, n_arms=0,
+        has_tail=True, has_eyes=True, has_ears=False, has_beak=False, has_wings=False,
+        movement="nod", drive_mode='crank',
+        accessories=[
+            # Carapace (demi-dôme sur le dos)
+            AccessoryDef("carapace", "ellipsoid", (30.0, 22.0, 18.0), "body", (0, 0, 8.0)),
+        ],
+    )
     return scene
 
 
@@ -5716,6 +5727,16 @@ def create_turtle_walking(style=MotionStyle.FLUID):
             MotionPrimitive("WAVE", 5, 360, law)]),
     ]
     scene._preset_name = "turtle_walking"
+    # Figurine: tortue complète avec carapace
+    scene._figurine_cfg = FigurineConfig(
+        name="Tortue marcheuse", body_type="quadruped", height=50.0,
+        head_ratio=0.20, n_legs=4, n_arms=0,
+        has_tail=True, has_eyes=True, has_ears=False, has_beak=False, has_wings=False,
+        movement="walk", drive_mode='crank',
+        accessories=[
+            AccessoryDef("carapace", "ellipsoid", (35.0, 25.0, 20.0), "body", (0, 0, 9.0)),
+        ],
+    )
     return scene
 
 
@@ -6856,8 +6877,16 @@ class FigurineBuilder:
 
         bt = (cfg.body_type or 'biped').lower().strip()
 
-        # Body proportions by type
-        if bt == 'bird':
+        # Body proportions — use body plan ratios if available from living_beings_db
+        _has_bp = hasattr(cfg, '_bp_body_width_ratio')
+        if _has_bp:
+            # Scale from body plan: ratios are relative to body_length
+            body_len = h * 0.85  # body_length as fraction of total height
+            body_w = body_len * cfg._bp_body_width_ratio
+            body_t = body_len * cfg._bp_body_height_ratio
+            body_w = max(body_w, 8.0)  # FDM minimum
+            body_t = max(body_t, 6.0)
+        elif bt == 'bird':
             body_len = h * 0.65
             body_w = h * 0.45
             body_t = h * 0.35
@@ -6886,6 +6915,8 @@ class FigurineBuilder:
 
         # Head mesh
         head_r = max(4.0, head_h / 2)
+        if _has_bp and hasattr(cfg, '_bp_head_ratio'):
+            head_r = max(4.0, body_len * cfg._bp_head_ratio / 2)
         if bt == 'fish':
             head = _make_ellipsoid(head_r*0.9, head_r*1.1, head_r*0.9)
         else:
@@ -6932,6 +6963,8 @@ class FigurineBuilder:
         # Tail
         if cfg.has_tail and bt in ('quadruped', 'bird', 'fish'):
             tail_len = max(8.0, h*0.22)
+            if _has_bp and hasattr(cfg, '_bp_tail_ratio') and cfg._bp_tail_ratio > 0:
+                tail_len = max(5.0, body_len * cfg._bp_tail_ratio)
             tail = trimesh.creation.cone(radius=max(1.5, body_w*0.18), height=tail_len, sections=14)
             # orient tail backward (Y-)
             tail.apply_transform(trimesh.transformations.rotation_matrix(np.radians(90), [1,0,0]))
@@ -6957,6 +6990,8 @@ class FigurineBuilder:
         n_arms = max(0, min(n_arms, 4))
 
         leg_len = max(6.0, h * (0.22 if bt in ('seated',) else 0.28))
+        if _has_bp and hasattr(cfg, '_bp_leg_ratio'):
+            leg_len = max(6.0, body_len * cfg._bp_leg_ratio)
         arm_len = max(6.0, h * 0.22)
 
         # Legs placement
