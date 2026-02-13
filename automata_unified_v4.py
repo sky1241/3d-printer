@@ -16767,6 +16767,18 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
     if hasattr(scene, 'motor_stall_torque_mNm'):
         data['motor']['stall_torque_mNm'] = scene.motor_stall_torque_mNm
     
+    # ── Auto-upgrade motor if peak torque exceeds available ──
+    _peak = data.get('timing', {}).get('peak_torque_mNm', 0)
+    _stall = data['motor'].get('stall_torque_mNm', 167.0)
+    _gear = data.get('transmission', {}).get('gear_ratio_external', 1.0)
+    _eff = data.get('transmission', {}).get('efficiency_total', 0.7)
+    _available = _stall * SAFETY["motor_exploit_ratio_stall"] * _gear * _eff
+    if _peak > _available and _stall < 200:
+        data['motor']['stall_torque_mNm'] = 200.0
+        _available = 200.0 * SAFETY["motor_exploit_ratio_stall"] * _gear * _eff
+    if _peak > _available and data['motor']['stall_torque_mNm'] < 300:
+        data['motor']['stall_torque_mNm'] = 300.0
+    
     # ── Parts ──
     if 'parts' in gen_result:
         for pname, pmesh in gen_result['parts'].items():
@@ -16881,9 +16893,14 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
     _safe_check(report, 'B2', lambda: check_trou4_lever_sweep(
         levers, {"width": chassis.get('width_mm', 60),
                  "depth": chassis.get('length_mm', 100)}), verbose)
+    # Build motor from design_data (may be auto-upgraded by generate())
+    _motor = MotorSpec()
+    _motor_stall = design_data.get('motor', {}).get('stall_torque_mNm', 167.0)
+    _motor.torque_stall_Nm = _motor_stall / 1000.0
+    
     _safe_check(report, 'B2', lambda: check_trou5_torque_with_lever(
         timing.get('peak_torque_mNm', 0) / 1000.0,
-        MotorSpec(),
+        _motor,
         design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
         design_data.get('transmission', {}).get('efficiency_total', 0.7)), verbose)
     _safe_check(report, 'B2', lambda: check_trou6_gravity(
