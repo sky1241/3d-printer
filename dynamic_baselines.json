@@ -1,0 +1,70 @@
+{
+  "chat": {
+    "parts": 48,
+    "wt": 48
+  },
+  "human": {
+    "parts": 48,
+    "wt": 48
+  },
+  "eagle": {
+    "parts": 48,
+    "wt": 48
+  },
+  "snake": {
+    "parts": 48,
+    "wt": 48
+  },
+  "dolphin": {
+    "parts": 48,
+    "wt": 48
+  },
+  "ant": {
+    "parts": 48,
+    "wt": 48
+  },
+  "butterfly": {
+    "parts": 48,
+    "wt": 48
+  },
+  "spider": {
+    "parts": 48,
+    "wt": 48
+  },
+  "scorpion": {
+    "parts": 48,
+    "wt": 48
+  },
+  "crab": {
+    "parts": 48,
+    "wt": 48
+  },
+  "lobster": {
+    "parts": 48,
+    "wt": 48
+  },
+  "centipede": {
+    "parts": 48,
+    "wt": 48
+  },
+  "octopus": {
+    "parts": 48,
+    "wt": 48
+  },
+  "snail": {
+    "parts": 48,
+    "wt": 48
+  },
+  "sunflower": {
+    "parts": 48,
+    "wt": 48
+  },
+  "t-rex": {
+    "parts": 48,
+    "wt": 48
+  },
+  "dragon": {
+    "parts": 48,
+    "wt": 48
+  }
+}

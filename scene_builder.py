@@ -66,12 +66,16 @@ def _gait_name(fig):
     if abs(lh - ph.get("RF", 0)) < 0.01: return "trot"
     return "walk"
 
-def make_automaton(query, target_height_mm=60.0, style=au.MotionStyle.FLUID, rpm=2.0, fallback_mass_kg=10.0):
+def make_automaton(query, target_height_mm=60.0, style=au.MotionStyle.FLUID, rpm=2.0, fallback_mass_kg=10.0, drive_mode='crank'):
     sp = find_species(query)
     bp = get_body_plan(query) if sp else None
     if sp and bp:
         fig = FigDims(sp, bp, target_height_mm)
-        return _route(sp, bp, fig, style, rpm)
+        scene = _route(sp, bp, fig, style, rpm)
+        # Attach figurine config from body plan → FigurineBuilder will generate 3D meshes
+        scene._figurine_cfg = bodyplan_to_figurine_cfg(sp, bp, target_height_mm, drive_mode)
+        scene._drive_mode = drive_mode
+        return scene
     if _HAS_OLD_DB:
         animal = get_or_estimate(query, fallback_mass_kg)
         old_fig = animal.to_figurine(target_height_mm)
@@ -751,3 +755,96 @@ def test_scene_builder():
 
 if __name__ == "__main__":
     test_scene_builder()
+
+
+# ═══════════════════════════════════════════════════════════════
+#  BRIDGE: BodyPlan → FigurineConfig (pour FigurineBuilder)
+# ═══════════════════════════════════════════════════════════════
+
+def bodyplan_to_figurine_cfg(sp, bp, target_h=60.0, drive_mode='crank'):
+    """Convertit un BodyPlan (living_beings_db) en FigurineConfig (automata_unified_v4).
+    
+    Utilise les proportions EXACTES du body plan pour dimensionner la figurine.
+    """
+    fig = FigDims(sp, bp, target_h)
+    
+    # Map body plan category to FigurineConfig body_type
+    bid = bp.id
+    if bid in ("FISH_STD", "FISH_PLAT", "MAM_MARIN"):
+        bt = "fish"
+    elif bid in ("AV_VOL", "AV_RAPACE", "AV_PETIT", "AV_COUREUR", "AV_NAGEUR"):
+        bt = "bird"
+    elif bid in ("MAM_PRIMATE", "FAN_ROBOT"):
+        bt = "biped"
+    else:
+        bt = "quadruped"
+    
+    # Map movable_parts to movement type
+    mp = bp.movable_parts
+    if "wings_flap" in mp or "wings" in mp:
+        mv = "flap"
+    elif "legs" in mp and bp.n_legs >= 4:
+        mv = "walk"
+    elif "head_nod" in mp or "head_retract" in mp:
+        mv = "nod"
+    elif "body_wave" in mp or "undulate" in mp:
+        mv = "swim"
+    else:
+        mv = "nod"
+    
+    # Build accessories from body plan specifics
+    accessories = []
+    
+    # Turtle shell (carapace) — dome on top of body
+    if bid == "REP_TORTUE":
+        shell_w = fig.body_w * 0.95
+        shell_l = fig.body_l * 0.85
+        shell_h = fig.body_h * 0.9  # tall dome
+        accessories.append(au.AccessoryDef(
+            "carapace", "ellipsoid", 
+            (shell_w/2, shell_l/2, shell_h/2),
+            "body", (0, 0, fig.body_h * 0.25)
+        ))
+    
+    # Crocodile snout
+    if bid == "REP_CROCO":
+        accessories.append(au.AccessoryDef(
+            "snout", "cone", (fig.head_l * 0.3, fig.head_l * 0.8, 0),
+            "head", (0, fig.head_l * 0.5, -fig.head_l * 0.1)
+        ))
+    
+    # Dinosaur crest / horns
+    if bid in ("REP_DINO_B", "REP_DINO_Q"):
+        accessories.append(au.AccessoryDef(
+            "crest", "cone", (fig.head_l * 0.15, fig.head_l * 0.4, 0),
+            "head", (0, -fig.head_l * 0.1, fig.head_l * 0.4)
+        ))
+    
+    cfg = au.FigurineConfig(
+        name=sp.name_fr,
+        body_type=bt,
+        height=target_h,
+        head_ratio=bp.head_ratio,
+        n_legs=bp.n_legs,
+        n_arms=bp.n_arms,
+        has_wings=bp.n_wings > 0,
+        has_tail=bp.has_tail,
+        has_eyes=True,
+        has_ears=bid in ("MAM_TRAPU","MAM_GRACE","MAM_FELIN","MAM_CANIN","MAM_PETIT","MAM_PRIMATE"),
+        has_beak=bid in ("AV_VOL","AV_RAPACE","AV_PETIT","AV_COUREUR","AV_NAGEUR"),
+        movement=mv,
+        drive_mode=drive_mode,
+        accessories=accessories,
+    )
+    
+    # Override FigurineBuilder proportions with actual body plan ratios
+    # These will be read by the enhanced FigurineBuilder
+    cfg._bp_body_width_ratio = bp.body_width_ratio
+    cfg._bp_body_height_ratio = bp.body_height_ratio
+    cfg._bp_head_ratio = bp.head_ratio
+    cfg._bp_leg_ratio = bp.leg_ratio
+    cfg._bp_tail_ratio = bp.tail_ratio
+    cfg._bp_wing_ratio = bp.wing_ratio
+    cfg._bp_id = bp.id
+    
+    return cfg

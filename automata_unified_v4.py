@@ -7407,6 +7407,118 @@ class JointFactory:
                 f"ratio {ratio:.2f} > 1.0, impossible geometry")
         return math.degrees(math.asin(ratio))
 
+    # ── Ball Joint (rotule) ──────────────────────────────────────
+    BALL_JOINT_TABLE = {
+        # Ø → (clearance_radial_mm, socket_opening_deg)
+        6.0:  (0.10, 120),
+        8.0:  (0.10, 110),
+        10.0: (0.15, 100),
+    }
+
+    @staticmethod
+    def create_ball_joint(
+        ball_diameter: float = 8.0,
+        stem_diameter: float = 3.0,
+        stem_length: float = 8.0,
+        clearance: float = 0.10,
+        socket_opening_deg: float = 110,
+    ) -> tuple:
+        """Create a ball-and-socket joint for multi-axis rotation.
+        
+        Returns (ball_stem_mesh, socket_mesh):
+            ball_stem: sphere on a cylindrical stem (attach to mobile part)
+            socket: hollow sphere with opening (subtract from fixed part)
+        
+        The socket has a conical opening to allow insertion and range of motion.
+        Print the ball+stem as one piece, socket is boolean-subtracted from host.
+        """
+        r_ball = ball_diameter / 2.0
+        r_socket = r_ball + clearance
+
+        # Ball on stem (Z-up: stem below, ball on top)
+        ball = trimesh.creation.icosphere(radius=r_ball, subdivisions=3)
+        ball.apply_translation([0, 0, stem_length + r_ball])
+
+        stem = trimesh.creation.cylinder(
+            radius=stem_diameter / 2.0,
+            height=stem_length,
+            sections=16)
+        stem.apply_translation([0, 0, stem_length / 2.0])
+
+        ball_stem = trimesh.boolean.union([ball, stem], engine='manifold')
+        if ball_stem is None or ball_stem.volume < 1:
+            ball_stem = ball  # fallback
+
+        # Socket: sphere with conical opening for insertion
+        socket_sphere = trimesh.creation.icosphere(radius=r_socket, subdivisions=3)
+        socket_sphere.apply_translation([0, 0, stem_length + r_ball])
+
+        # Opening cone: remove top portion so ball can be inserted
+        # socket_opening_deg = angle from top of socket that's open
+        cone_h = r_socket * 2.0
+        cone_r = r_socket * 1.5  # wider than socket
+        cone = trimesh.creation.cylinder(
+            radius=cone_r, height=cone_h, sections=24)
+        # Position cone to cut the top opening
+        opening_offset = r_ball * np.cos(np.radians(socket_opening_deg / 2.0))
+        cone.apply_translation([0, 0, stem_length + r_ball + opening_offset + cone_h / 2.0])
+
+        try:
+            socket = trimesh.boolean.union([socket_sphere, cone], engine='manifold')
+        except Exception:
+            socket = socket_sphere  # fallback: full sphere socket
+
+        return ball_stem, socket
+
+    @staticmethod
+    def ball_socket_diameter(ball_d: float, clearance: float = 0.10) -> float:
+        """Socket inner diameter for a given ball diameter."""
+        return ball_d + 2 * clearance
+
+    # ── Living Hinge (charnière mince) ────────────────────────────
+    @staticmethod
+    def create_living_hinge(
+        width: float = 10.0,
+        thickness: float = 0.4,
+        length: float = 2.0,
+        n_slits: int = 0,
+    ) -> 'trimesh.Trimesh':
+        """Create a living hinge — thin flexible strip between two rigid parts.
+        
+        Best for: mâchoire, nageoire, paupière.
+        PLA: ~20 cycles before fatigue. PETG: ~100+ cycles.
+        Max amplitude: ~90° PLA, ~120° PETG.
+        
+        Args:
+            width: hinge width (perpendicular to bend axis)
+            thickness: 0.4mm = 2 layers at 0.2mm (minimum printable)
+            length: hinge length along bend direction
+            n_slits: number of relief slits (0 = solid, >0 = more flexible)
+        
+        Returns: thin box mesh (to be placed between fixed and mobile parts)
+        """
+        if thickness < 0.3:
+            raise ValueError(f"Living hinge thickness {thickness}mm < 0.3mm minimum (FDM limit)")
+        if thickness > 0.8:
+            raise ValueError(f"Living hinge thickness {thickness}mm > 0.8mm (too stiff, won't flex)")
+
+        hinge = trimesh.creation.box(extents=[width, length, thickness])
+
+        # Add relief slits for flexibility (parallel cuts through width)
+        if n_slits > 0:
+            slit_spacing = width / (n_slits + 1)
+            slit_width = 0.5  # mm
+            for i in range(n_slits):
+                x = -width / 2 + slit_spacing * (i + 1)
+                slit = trimesh.creation.box(extents=[slit_width, length + 0.1, thickness + 0.1])
+                slit.apply_translation([x, 0, 0])
+                try:
+                    hinge = hinge.difference(slit, engine='manifold')
+                except Exception:
+                    pass
+        
+        return hinge
+
 
 class FigurineBuilder:
     """Génère une figurine paramétrique en CSG simple.
