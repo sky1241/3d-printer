@@ -8548,6 +8548,93 @@ class AutomataGenerator:
                     self.all_parts[f"fig_{fname}"] = fmesh
                 print(f"  · Figurine: {len(fig_parts)} pièces")
 
+        # ── Step 5a-art: Articulate figurine joints ──────────────
+        # Only for parametric figurines (with _figurine_cfg).
+        # Old presets use hardcoded FIGURINE_GENERATORS and don't need this.
+        art_count = 0
+        if fig_cfg is not None:
+          for jt in self.scene.joints:
+            # Map scene joint to figurine parts
+            # joint.child = link name (e.g. "head") → fig_head, fig_neck
+            child_name = jt.child_link.lower() if jt.child_link else ''
+            parent_name = jt.parent_link.lower() if jt.parent_link else ''
+
+            # Find the mobile fig part (the child)
+            fig_mobile_key = f'fig_{child_name}'
+            if fig_mobile_key not in self.all_parts:
+                continue  # No matching figurine part
+
+            # Find a "bridge" part (neck, etc.) that connects parent to child
+            fig_bridge_key = None
+            for bname in [f'fig_neck', f'fig_{child_name}_connector']:
+                if bname in self.all_parts:
+                    fig_bridge_key = bname
+                    break
+
+            fig_mobile = self.all_parts[fig_mobile_key]
+
+            # Calculate joint position: use the bridge part centroid, or
+            # midpoint between parent and child part centroids
+            if fig_bridge_key and fig_bridge_key in self.all_parts:
+                joint_pos = self.all_parts[fig_bridge_key].centroid.copy()
+            else:
+                # Fallback: bottom of the mobile part
+                joint_pos = fig_mobile.bounds[0].copy()
+
+            # Joint axis from scene (already in world frame for simple cases)
+            joint_axis = np.array(jt.axis, dtype=float)
+
+            # Create pin joint
+            try:
+                pin_d = 3.0  # default pin diameter
+                pin_clearance = 0.15
+                pin_length = 10.0  # will be auto-sized
+
+                pin_mesh, hole_mesh = JointFactory.create_pin_joint(
+                    diameter=pin_d, length=pin_length, clearance=pin_clearance,
+                    with_chamfer=False)
+
+                # Orient pin along joint axis
+                z_axis = np.array([0.0, 0.0, 1.0])
+                if abs(np.dot(z_axis, joint_axis / max(np.linalg.norm(joint_axis), 1e-9))) < 0.9999:
+                    rot_ax = np.cross(z_axis, joint_axis)
+                    rot_ax = rot_ax / max(np.linalg.norm(rot_ax), 1e-9)
+                    ang = np.arccos(np.clip(np.dot(z_axis, joint_axis / max(np.linalg.norm(joint_axis), 1e-9)), -1, 1))
+                    rot_mat = trimesh.transformations.rotation_matrix(ang, rot_ax)
+                    pin_mesh.apply_transform(rot_mat)
+                    hole_mesh.apply_transform(rot_mat)
+
+                pin_mesh.apply_translation(joint_pos)
+                hole_mesh.apply_translation(joint_pos)
+
+                # Subtract hole from mobile part
+                try:
+                    articulated = fig_mobile.difference(hole_mesh, engine='manifold')
+                    if articulated is not None and articulated.volume > 1:
+                        self.all_parts[fig_mobile_key] = articulated
+                except Exception:
+                    pass  # Keep original if boolean fails
+
+                # Subtract hole from bridge part (if exists)
+                if fig_bridge_key and fig_bridge_key in self.all_parts:
+                    try:
+                        bridge_art = self.all_parts[fig_bridge_key].difference(hole_mesh, engine='manifold')
+                        if bridge_art is not None and bridge_art.volume > 0.5:
+                            self.all_parts[fig_bridge_key] = bridge_art
+                    except Exception:
+                        pass
+
+                # Add pin as separate part
+                pin_name = f'fig_pin_{jt.name}'
+                self.all_parts[pin_name] = pin_mesh
+                art_count += 1
+
+            except Exception as e:
+                print(f"  ⚠ Articulation {jt.name}: {e}")
+
+        if art_count > 0:
+            print(f"  · Articulations: {art_count} pin joint(s) ajouté(s)")
+
         # ── Step 5a-bis: Pushrod connections (lever → figurine) ──
         # Each lever output tip gets a pushrod (Ø3mm rod) bridging to the nearest
         # figurine part. A Ø3.3mm socket is subtracted from the fig part.
