@@ -1096,6 +1096,7 @@ class CamDesignResult:
     x_cam: np.ndarray; y_cam: np.ndarray
     x_pitch: np.ndarray; y_pitch: np.ndarray
     mesh: trimesh.Trimesh = None
+    phi_limit_deg: float = 30.0  # design limit used (may be relaxed to 45/58°)
 
 
 def auto_design_cam(
@@ -1204,6 +1205,7 @@ def auto_design_cam(
             follower_type="roller", phi_max_deg=round(np.degrees(phi_max_actual), 1),
             rho_min_mm=round(uc["rho_min_mm"], 2), undercut_ok=uc["ok"],
             x_cam=x_cam, y_cam=y_cam, x_pitch=x_p, y_pitch=y_p,
+            phi_limit_deg=round(np.degrees(phi_limit), 1),
         )
 
     elif follower_type == "flat":
@@ -7756,6 +7758,7 @@ class AutomataGenerator:
                     'Rb_mm': design.Rb,
                     'rf_mm': rf,
                     'phi_max_deg': design.phi_max_deg,
+                    'phi_limit_deg': design.phi_limit_deg,
                     'undercut_ok': design.undercut_ok,
                     'amp_scale': amp_scale,
                     'lever_needed': True,  # Always: levers ARE the kinematic chain cam→lever→pushrod→figurine
@@ -16673,9 +16676,8 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 # Mark as cascade-approved if generator verified phi_max numerically
                 if cd.get('undercut_ok', False) and cd.get('phi_max_deg', 99) <= 32:
                     cam_entry['cascade_approved'] = True
-                # If cam was designed with relaxed phi_max, set the limit it was designed for
-                if cd.get('phi_max_deg', 30) > 30:
-                    cam_entry['phi_limit_deg'] = min(cd['phi_max_deg'] + 5, 60)  # allow 5° margin
+                # Propagate the design limit used (may be relaxed to 45/58° for space)
+                cam_entry['phi_limit_deg'] = cd.get('phi_limit_deg', 30.0)
             # Override z from actual mesh bounds if available
             # IMPORTANT: "axial" for cam collision = along shaft = Y axis
             # z_min/z_max for trou1 = positions along shaft axis (Y in our coords)
