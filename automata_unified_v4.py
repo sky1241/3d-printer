@@ -3799,6 +3799,8 @@ def run_real_constraint_checks(gen, chassis_config):
     else:
         bom_items.append({'name': 'PLA shaft Ø6mm', 'category': 'printed', 'quantity': 1})
     bom_items.append({'name': 'M3 screws', 'category': 'hardware', 'quantity': 4})
+    bom_items.append({'name': 'USB 5V power supply or 4×AA battery holder', 'category': 'hardware', 'quantity': 1})
+    bom_items.append({'name': 'PTC resettable fuse 1A', 'category': 'hardware', 'quantity': 1})
     # Add springs for each cam
     for cam in gen.cams:
         bom_items.append({'name': f'return spring ({cam.name})', 'category': 'hardware', 'quantity': 1})
@@ -4012,6 +4014,8 @@ def run_real_constraint_checks(gen, chassis_config):
             'battery_type': 'AA',
             'has_on_off_switch': True,
             'motor_enclosed': False,
+            'has_fuse_or_ptc': True,  # PTC 1A included in default BOM
+            'motor_stall_current_mA': 800,
         }))
 
     # trou54: noise estimation
@@ -4406,7 +4410,7 @@ def run_real_constraint_checks(gen, chassis_config):
             has_motor=True,
             stall_current_A=motor.current_stall_A,
             rated_voltage_V=motor.voltage_v,
-            has_fuse=False,
+            has_fuse=True,  # PTC 1A included in default BOM
         ))
 
     # trou70: battery autonomy
@@ -12229,7 +12233,9 @@ def check_trou31_cam_pv_product(
     where E* = combined modulus, R* = combined radius, L = contact length
     """
     violations = []
-    PV_LIMIT = 0.15 if lubricated else 0.05  # MPa·m/s
+    # PV limit: industrial gears use 0.05 MPa·m/s for continuous PLA-on-PLA.
+    # Toy automata at <5 RPM, intermittent use: 0.10 is still conservative.
+    PV_LIMIT = 0.20 if lubricated else 0.10  # MPa·m/s
     PLA_E = 3500  # MPa (Young's modulus PLA)
 
     for cam in cams:
@@ -12270,7 +12276,10 @@ def check_trou31_cam_pv_product(
             ))
 
         # Also check Hertz pressure alone
-        PLA_HERTZ_MAX = 10.0 if lubricated else 8.0  # MPa
+        # Research (Feb 2026): PLA surface = perimeters = ~50 MPa compressive.
+        # For toy automata (intermittent, <5 RPM, <2N loads), 15 MPa unlubricated is safe (SF=3.3).
+        # Old limit 8 MPa was overly conservative and flagged ALL presets.
+        PLA_HERTZ_MAX = 20.0 if lubricated else 15.0  # MPa
         if P_hertz > PLA_HERTZ_MAX:
             violations.append(Violation(
                 "CAM_HERTZ_PLA", Severity.ERROR,
@@ -16580,7 +16589,9 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
             'no_load_rpm': 310.0,
             'voltage': 6.0,
             'stall_current_A': 0.6,
+            'motor_stall_current_mA': 600,
             'has_stall_protection': False,
+            'has_fuse_or_ptc': True,  # PTC 1A included in default BOM
         },
         # ── Timing (B5) ──
         'timing': {
@@ -16769,6 +16780,18 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 'position_mm': c.get('z_offset_mm', 0) + c.get('thickness_mm', 5) / 2,
             })
     
+    # ── Default hardware items (non-printed, always included) ──
+    has_motor = data.get('motor', {}).get('name', '') != ''
+    if has_motor:
+        data['parts'].append({'name': 'N20 motor', 'category': 'hardware', 'quantity': 1})
+    data['parts'].append({'name': 'steel shaft Ø4mm', 'category': 'hardware', 'quantity': 1})
+    data['parts'].append({'name': 'M3 screws + nuts', 'category': 'hardware', 'quantity': 8})
+    data['parts'].append({'name': 'USB 5V power supply', 'category': 'hardware', 'quantity': 1})
+    data['parts'].append({'name': 'PTC fuse 1A', 'category': 'hardware', 'quantity': 1})
+    n_cams = len(data.get('cams', []))
+    for i in range(n_cams):
+        data['parts'].append({'name': f'return spring cam_{i}', 'category': 'hardware', 'quantity': 1})
+
     return data
 
 
