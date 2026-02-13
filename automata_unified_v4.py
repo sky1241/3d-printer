@@ -9464,8 +9464,9 @@ def check_trou4_lever_sweep(levers: List[Dict],
         L = lever.get("length_mm", 0)
         psi = math.radians(lever.get("psi_max_deg", 0))
         
-        # Rayon de balayage = longueur du levier
-        sweep_radius = L + clearance
+        # Horizontal sweep = projection of lever arc, not full radius
+        # Levers pivot vertically (XZ plane); horizontal footprint is L*sin(psi)
+        sweep_radius = L * math.sin(psi) + clearance if psi > 0 else L + clearance
         
         # Vérification simplifiée: le cercle de balayage doit tenir
         px = lever.get("pivot_x_mm", 0)
@@ -15191,10 +15192,10 @@ def test_block2():
     print("✅ Trou 3: Angle de pression & undercut OK")
     
     # --- Trou 4: lever sweep ---
-    levers = [{"name": "lev_A", "length_mm": 60, "psi_max_deg": 30,
-               "pivot_x_mm": 40, "pivot_y_mm": 40, "ratio": 3.0}]
+    levers = [{"name": "lev_A", "length_mm": 80, "psi_max_deg": 45,
+               "pivot_x_mm": 30, "pivot_y_mm": 40, "ratio": 3.0}]
     v = check_trou4_lever_sweep(levers, {"width": 80, "depth": 80})
-    # sweep = 60 + 0.8 = 60.8mm, min dist to wall = 40mm → collision
+    # horizontal sweep = 80*sin(45°) + 0.8 = 57.4mm, min dist to wall = 30mm → collision
     assert any(v2.code == "LEVER_SWEEP_COLLISION" for v2 in v)
     print("✅ Trou 4: Encombrement levier OK")
     
@@ -16737,7 +16738,7 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                 'arm_mm': mag * 1.5,  # approximate lever arm from amplitude
                 'input_arm_mm': mag,
                 'output_arm_mm': mag * 1.5,
-                'length_mm': mag * 2,
+                'length_mm': mag * 1.5,  # output arm = sweep-relevant length (pivots vertically)
                 'width_mm': 6.0,
                 'thickness_mm': 4.0,
                 'pivot_diameter_mm': 4.0,
