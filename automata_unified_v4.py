@@ -1890,22 +1890,26 @@ def create_mid_bearing_wall(config, shaft_positions, y_position=0.0):
 
 
 def create_crank_handle(config, z_position=0.0):
-    """Create a printable crank handle for manual operation (replaces motor)."""
+    """Create a printable crank handle for manual operation (replaces motor).
+    Arm extends outward in -Y direction (away from chassis), not sideways."""
     shaft_r = config.camshaft_diameter / 2
-    # Main arm: horizontal bar
+    # Main arm: extends outward from chassis (-Y direction)
     arm_length = 30.0
     arm = trimesh.creation.cylinder(radius=shaft_r, height=arm_length, sections=16)
-    arm.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [0, 0, 1]))
-    arm.apply_translation([arm_length/2, 0, 0])
-    # Handle knob: vertical cylinder at the end of the arm
+    arm.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
+    arm.apply_translation([0, -arm_length/2, 0])
+    # Handle knob: vertical cylinder at the end of the arm (along Z for easy grip)
     knob_r = 5.0; knob_h = 15.0
     knob = trimesh.creation.cylinder(radius=knob_r, height=knob_h, sections=16)
-    knob.apply_translation([arm_length, 0, 0])
+    knob.apply_translation([0, -arm_length, 0])
     # Hub: connects to camshaft (bore hole will be added by joint features)
     hub = trimesh.creation.cylinder(radius=shaft_r + 3.0, height=8.0, sections=24)
+    hub.apply_transform(trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]))
     # Combine
     crank = trimesh.util.concatenate([arm, knob, hub])
-    crank.apply_translation([0, -config.camshaft_length/2 - 8, z_position])
+    # Position at the end of the shaft, outside the wall
+    half_len = config.camshaft_length / 2
+    crank.apply_translation([0, -half_len - 4, z_position])
     return crank
 
 
@@ -1948,9 +1952,11 @@ def _make_shaft_and_drive(config, cam_count, cz, parts):
     parts["camshaft"] = shaft
     if config.drive_mode == 'crank':
         parts["crank_handle"] = create_crank_handle(config, z_position=cz)
-        for i in range(cam_count + 1):
-            y = -config.camshaft_length/2 + config.plate_thickness + i * config.cam_spacing
-            parts[f"collar_{i}"] = create_printed_collar(config, z_position=cz, y_position=y)
+        # Single retention collar on the far end (non-crank side)
+        # Crank handle prevents axial slide on one side, collar on the other
+        half_len = config.camshaft_length / 2
+        parts["collar_retention"] = create_printed_collar(
+            config, z_position=cz, y_position=half_len - 2.0)
     else:
         parts["motor_mount"] = create_motor_mount(config)
 
@@ -3830,7 +3836,8 @@ def run_real_constraint_checks(gen, chassis_config):
     # ── TORQUE & TRANSMISSION ──
 
     # trou5: torque with lever — motor must handle all cam loads
-    if hasattr(gen, '_motor_spec') and gen._motor_spec:
+    # Skip in crank mode: human arm provides effectively unlimited torque for toy cams
+    if chassis_config.drive_mode != 'crank' and hasattr(gen, '_motor_spec') and gen._motor_spec:
         motor = gen._motor_spec
         # Estimate peak torque: sum of cam contact forces × Rb, divided by gear ratio
         total_tau = 0
@@ -3847,7 +3854,7 @@ def run_real_constraint_checks(gen, chassis_config):
         ))
 
     # trou12: transmission ratio check
-    if hasattr(gen, '_motor_spec') and gen._motor_spec:
+    if chassis_config.drive_mode != 'crank' and hasattr(gen, '_motor_spec') and gen._motor_spec:
         motor = gen._motor_spec
         gear_ratio = motor.gear_ratio if hasattr(motor, 'gear_ratio') else 100.0
         violations.extend(check_trou12_transmission(
@@ -5647,10 +5654,11 @@ def create_swimming_fish(style=MotionStyle.FLUID):
 
 
 def create_turtle_simple(style=MotionStyle.FLUID):
-    """Tortue simple — tête hoche haut/bas. 1 came, le plus simple possible."""
+    """Tortue simple — tête hoche haut/bas. 1 came, 100% imprimable (manivelle)."""
     law = STYLE_TO_LAW[style]
     scene = AutomataScene(name="Simple Turtle", description="Tortue tête haut-bas",
                           style=style, cycle_rpm=1.5)
+    scene._drive_mode = 'crank'  # 100% printed: PLA shaft + crank handle
     # Corps = carapace ovale, tête petite
     scene.links = [Link("shell", 55, 40, 25, 20), Link("head", 18, 12, 8, 5)]
     scene.joints = [
@@ -5663,11 +5671,11 @@ def create_turtle_simple(style=MotionStyle.FLUID):
 
 
 def create_turtle_walking(style=MotionStyle.FLUID):
-    """Tortue complète — tête gauche-droite, 4 pattes marchent, queue haut-bas. 6 cames."""
+    """Tortue complète — tête gauche-droite, 4 pattes marchent, queue haut-bas. 6 cames, 100% imprimable."""
     law = STYLE_TO_LAW[style]
     scene = AutomataScene(name="Walking Turtle", description="Tortue qui marche",
                           style=style, cycle_rpm=1.0)
-    scene.motor_stall_torque_mNm = 380.0  # N20 380:1 — 6 cams at 58.5 mNm peak
+    scene._drive_mode = 'crank'  # 100% printed: PLA shaft + crank handle
     # Carapace bombée, tête, 4 pattes, queue
     scene.links = [
         Link("shell", 65, 45, 30, 22),
@@ -16648,6 +16656,7 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
             'length_mm': 100, 'width_mm': 60, 'height_mm': 55,
             'wall_thickness_mm': 3.0, 'base_thickness_mm': 3.0,
             'material': 'PLA',
+            'drive_mode': getattr(scene, '_drive_mode', 'motor'),
         },
         # ── Pièces (B7, B8) ──
         'parts': [],
@@ -16963,11 +16972,14 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
     _motor_stall = design_data.get('motor', {}).get('stall_torque_mNm', 167.0)
     _motor.torque_stall_Nm = _motor_stall / 1000.0
     
-    _safe_check(report, 'B2', lambda: check_trou5_torque_with_lever(
-        timing.get('peak_torque_mNm', 0) / 1000.0,
-        _motor,
-        design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
-        design_data.get('transmission', {}).get('efficiency_total', 0.7)), verbose)
+    _drive_mode = chassis.get('drive_mode', 'motor')
+    # Skip torque check in crank mode: human arm provides unlimited torque for toy cams
+    if _drive_mode != 'crank':
+        _safe_check(report, 'B2', lambda: check_trou5_torque_with_lever(
+            timing.get('peak_torque_mNm', 0) / 1000.0,
+            _motor,
+            design_data.get('transmission', {}).get('gear_ratio_external', 1.0),
+            design_data.get('transmission', {}).get('efficiency_total', 0.7)), verbose)
     _safe_check(report, 'B2', lambda: check_trou6_gravity(
         design_data.get('orientation', 'vertical'), levers), verbose)
     _safe_check(report, 'B2', lambda: check_trou7_spring(cams, levers), verbose)
@@ -17038,7 +17050,8 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
     
     # ── B8: TROU 52-59 ──
     _safe_check(report, 'B8', lambda: check_trou52_en71_safety(parts), verbose)
-    _safe_check(report, 'B8', lambda: check_trou53_electrical(motor), verbose)
+    if _drive_mode != 'crank':
+        _safe_check(report, 'B8', lambda: check_trou53_electrical(motor), verbose)
     _safe_check(report, 'B8', lambda: check_trou54_noise(
         timing.get('rpm', 2),
         len(gears),
