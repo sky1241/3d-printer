@@ -1,278 +1,249 @@
-# ⚔️ PLAN DE BATAILLE — Figurines Articulées
-# Approche: brique par brique, tests à chaque étape
+# 🎯 PLAN DE BATAILLE — Module Figurine Articulée
+# Brique par brique, batterie de tests à chaque étape
 # Date: 13 février 2026
 
----
+# ══════════════════════════════════════════════════════════════
+# PRINCIPE: Chaque étape est ISOLÉE et TESTABLE indépendamment
+# On ne passe à l'étape N+1 que si N est 100% vert
+# ══════════════════════════════════════════════════════════════
 
-## PHILOSOPHIE
-- **1 brique = 1 feature isolée + tests complets**
-- On merge PAS si les tests passent pas
-- Chaque brique est utilisable indépendamment
-- On teste sur turtle_simple d'abord (1 seul joint = le plus simple)
-- Puis on généralise
+## ÉTAPE 1 — Pin Joint Generator (le plus simple)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: diamètre, longueur, clearance
+**Output**: (axe_mesh, trou_mesh) — 2 trimesh objects
 
----
+Quoi coder:
+  - create_pin_joint(d=3.0, length=8.0, clearance=0.3) → (cylinder, cylinder)
+  - L'axe = cylindre plein Ø d
+  - Le trou = cylindre Ø (d + 2×clearance) à soustraire de la pièce hôte
+  - Ajouter chanfrein 0.3mm sur entrée du trou (imprimabilité)
+  - Ajouter collerette anti-sortie (optionnel, pour plus tard)
 
-## 🧱 BRIQUE 1 — Pin Joint Generator (le pivot de base)
-**Objectif**: Générer un axe + trou imprimables avec clearance correcte
+Tests étape 1:
+  ✅ axe watertight
+  ✅ trou watertight  
+  ✅ axe.bounds OK (diamètre correct ±0.01mm)
+  ✅ trou diamètre = axe + 2×clearance
+  ✅ axe rentre dans le trou (pas de collision quand centré)
+  ✅ axe Ø3, 4, 5, 6 → tous valides
+  ✅ Régression: 9/9 presets, 17/17 dynamic toujours verts
 
-### Ce qu'on code:
-```python
-def create_pin_joint(diameter, length, clearance=0.3):
-    """Retourne (axe_mesh, hole_mesh) pour un pivot imprimable."""
-    # axe = cylindre plein Ø diameter
-    # trou = cylindre creux Ø diameter+clearance
-    # + chanfrein 0.5mm à l'entrée du trou (facilite insertion)
-    # + flat optionnel sur l'axe (anti-rotation si press-fit)
-```
+Risque: ZÉRO — c'est une fonction isolée, elle touche à rien d'existant
 
-### Constantes (de DATA_ARTICULATIONS.md):
-- Clearance nominale: 0.30mm (radiale totale, soit 0.15/côté)
-- Clearance serrée: 0.20mm (X1C calibrée)
-- Clearance sûre: 0.50mm (imprimante mal calibrée)
-- Chanfrein entrée: 0.5mm @ 45°
-- Diamètres supportés: 3, 4, 5, 6mm
 
-### Tests BRIQUE 1:
-- [ ] T1.1: Pin joint Ø3mm → axe watertight, trou watertight
-- [ ] T1.2: Pin joint Ø6mm → idem
-- [ ] T1.3: Axe rentre dans trou (bounding box axe < bounding box trou)
-- [ ] T1.4: Clearance mesurée = valeur demandée (±0.01mm)
-- [ ] T1.5: Chanfrein présent (faces count > cylindre simple)
-- [ ] T1.6: Orientation check — axe horizontal (max extent en X ou Y, pas Z)
-- [ ] T1.7: Aucune régression sur les 9 presets existants
-- [ ] T1.8: Aucune régression sur les 17 espèces dynamiques
+## ÉTAPE 2 — Body Splitter (couper la figurine aux joints)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: figurine body mesh + joint_position + joint_axis
+**Output**: (fixed_part, mobile_part) — 2 meshes coupés au bon endroit
 
----
+Quoi coder:
+  - split_at_joint(body_mesh, cut_point, cut_normal) → (fixed, mobile)
+  - Utilise trimesh.intersections.slice_mesh_plane()
+  - Ajoute 0.5mm de gap entre les 2 parties (pour clearance rotation)
+  - Chaque partie doit être watertight après découpe (cap les faces ouvertes)
+  
+Tester sur:
+  - Sphère (tête) → couper en 2 → 2 demi-sphères watertight
+  - Ellipsoïde (corps tortue) → couper au cou → corps + bout de cou
+  - Vérifier que volume(fixed) + volume(mobile) ≈ volume(original) - gap
 
-## 🧱 BRIQUE 2 — Joint Definition System
-**Objectif**: Définir OÙ couper la figurine pour créer les articulations
+Tests étape 2:
+  ✅ fixed_part watertight
+  ✅ mobile_part watertight
+  ✅ Volumes cohérents (somme ≈ original ±5%)
+  ✅ Gap visible entre les 2 parties (0.5mm min)
+  ✅ Fonctionne sur sphère, ellipsoïde, cylindre
+  ✅ Régression: tout vert
 
-### Ce qu'on code:
-```python
-@dataclass
-class JointDef:
-    name: str              # "neck", "hip_fl", "tail"
-    joint_type: str        # "pin", "ball", "hinge"
-    axis: Tuple[float,float,float]  # axe de rotation (1,0,0)=pitch
-    position: Tuple[float,float,float]  # point de pivot dans l'espace figurine
-    amplitude_deg: float   # ±30°
-    parent_part: str       # "body" (fixe)
-    child_part: str        # "head" (mobile)
-    pushrod_attach: str    # "child" — le pushrod pousse la partie mobile
-    arm_length: float      # bras de levier en mm (pour formule θ=asin(Δ/R))
-    return_method: str     # "gravity", "friction", "spring"
-```
+Risque: FAIBLE — fonction isolée, pas d'impact sur l'existant
 
-### Mapping body_type → joints:
-```python
-JOINT_TEMPLATES = {
-    'quadruped_shell': [  # Tortue
-        JointDef("neck", "pin", (1,0,0), ..., 30, "body", "head", ...),
-        JointDef("hip_fl", "pin", (1,0,0), ..., 20, "body", "leg_0", ...),
-        JointDef("hip_fr", "pin", (1,0,0), ..., 20, "body", "leg_1", ...),
-        JointDef("hip_rl", "pin", (1,0,0), ..., 20, "body", "leg_2", ...),
-        JointDef("hip_rr", "pin", (1,0,0), ..., 20, "body", "leg_3", ...),
-        JointDef("tail", "pin", (1,0,0), ..., 15, "body", "tail", ...),
-    ],
-}
-```
 
-### Tests BRIQUE 2:
-- [ ] T2.1: JointDef pour tortue → 6 joints (cou + 4 hanches + queue)
-- [ ] T2.2: Chaque joint a un parent et child valides (existent dans fig_parts)
-- [ ] T2.3: Position du joint est ENTRE parent et child (pas à l'extérieur)
-- [ ] T2.4: Amplitude est dans range [5°, 90°]
-- [ ] T2.5: arm_length > 0 et < hauteur figurine
-- [ ] T2.6: Pas de régression presets/espèces
+## ÉTAPE 3 — Intégration Pin Joint dans Body Split
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: fixed_part + mobile_part + joint_params
+**Output**: fixed_part avec trou, mobile_part avec trou, axe séparé
 
----
+Quoi coder:
+  - add_joint_to_parts(fixed, mobile, joint_pos, axis_dir, d=3.0, clearance=0.3)
+  - Soustraire le trou de CHAQUE partie (fixed et mobile)
+  - Créer l'axe comme pièce séparée
+  - L'axe traverse les 2 parties
+  - Vérifier que l'axe est aligné avec l'axe de rotation du joint
 
-## 🧱 BRIQUE 3 — Body Splitter (découpe figurine)
-**Objectif**: Couper le mesh figurine en parties fixes et mobiles
+Tester sur:
+  - Tortue: couper tête au cou, ajouter pin joint
+  - Vérifier: tête peut pivoter autour de l'axe sans collision
 
-### Ce qu'on code:
-```python
-def split_figurine(fig_parts, joint_defs):
-    """
-    Prend les pièces figurine actuelles (ellipsoïdes) et les réorganise:
-    - Corps (body) = FIXE, monté sur châssis
-    - Tête (head) = MOBILE, connectée par pin joint au cou
-    - Chaque partie mobile a un "bras" pour attacher le pushrod
-    
-    Retourne: dict de pièces avec metadata (fixed/mobile, joint_name)
-    """
-```
+Tests étape 3:
+  ✅ Trou dans fixed: watertight après boolean subtract
+  ✅ Trou dans mobile: watertight après boolean subtract  
+  ✅ Axe passe à travers les 2 trous
+  ✅ Mobile peut pivoter ±30° sans collision avec fixed
+  ✅ Pas de collision axe/parois à amplitude max
+  ✅ Régression: tout vert
 
-### Approche simple (V1):
-On ne COUPE PAS les meshes existants. On les RÉORGANISE:
-- fig_body + fig_acc_carapace → FIXE (snap-fit sur châssis)
-- fig_head + fig_neck → MOBILE (pivote autour du cou)
-- fig_leg_N → MOBILE (pivote autour de la hanche)
-- fig_tail → MOBILE (pivote autour de la base queue)
+Risque: MOYEN — les boolean CSG sur mesh peuvent être instables
+Mitigation: fallback si boolean fail, log warning
 
-Chaque partie mobile reçoit:
-- Un TROU d'axe au point de pivot
-- Un BRAS (extension) pour attacher le pushrod
 
-Chaque partie fixe reçoit:
-- Un TROU d'axe correspondant
-- Des SUPPORTS pour les axes
+## ÉTAPE 4 — Pushrod Attachment Point
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: joint_position + lever_arm_length + pushrod_direction
+**Output**: (attachment_point, socket_mesh) sur la partie mobile
 
-### Tests BRIQUE 3:
-- [ ] T3.1: split_figurine sur tortue → body=FIXE, head=MOBILE
-- [ ] T3.2: Chaque partie mobile a un trou d'axe (boolean subtract visible)
-- [ ] T3.3: Chaque partie fixe a un trou d'axe correspondant
-- [ ] T3.4: Les trous sont ALIGNÉS (même axe, même position)
-- [ ] T3.5: Aucun mesh ne devient non-watertight après découpe
-- [ ] T3.6: Le pin joint FIT (axe.bounds < trou.bounds)
-- [ ] T3.7: Pas de régression
+Quoi coder:
+  - calculate_pushrod_attach(joint_pos, arm_R=16.0, direction='down')
+  - Le point d'attache est à distance R du pivot, dans la direction du pushrod
+  - Créer un socket (trou Ø pushrod + clearance) dans la partie mobile
+  - Le pushrod s'insère dans ce socket avec jeu 0.3mm
 
----
+Formule:
+  - attach_point = joint_pos + R × direction_perpendiculaire_à_axe
+  - θ_max = asin(pushrod_travel / R) — on vérifie que c'est dans les limites
 
-## 🧱 BRIQUE 4 — Pushrod Router (connexion levier → joint)
-**Objectif**: Créer un pushrod qui va du levier mécanique au bras de la partie mobile
+Tests étape 4:
+  ✅ Point d'attache à distance R du pivot (±0.1mm)
+  ✅ θ_max calculé correctement (asin(8/16) = 30°)
+  ✅ Socket watertight dans la partie mobile
+  ✅ Pushrod rentre dans le socket
+  ✅ Régression: tout vert
 
-### Ce qu'on code:
-```python
-def route_pushrod_to_joint(lever_tip, joint_def, fig_parts):
-    """
-    Crée un pushrod (tige Ø3-5mm) du sommet du levier 
-    au bras de la partie mobile.
-    
-    Le pushrod a:
-    - Un embout sphérique en bas (socket dans le levier)
-    - Un embout sphérique en haut (socket dans le bras mobile)
-    - Un corps cylindrique entre les deux
-    
-    Retourne: pushrod_mesh, socket_holes (à soustraire des pièces)
-    """
-```
+Risque: FAIBLE — calculs géométriques purs
 
-### Cinématique:
-```
-θ_sortie = asin(Δh_pushrod / R_bras)
-```
-- Δh_pushrod = amplitude du levier (donnée par la came)
-- R_bras = distance joint_pivot → point_attache_pushrod sur la partie mobile
 
-### Tests BRIQUE 4:
-- [ ] T4.1: Pushrod connecte lever_neck au bras de la tête
-- [ ] T4.2: Pushrod est watertight
-- [ ] T4.3: Pushrod ne traverse PAS le corps fixe (fig_body)
-- [ ] T4.4: Socket holes sont bien positionnés
-- [ ] T4.5: Amplitude calculée ≈ amplitude attendue (30° ± 5°)
-- [ ] T4.6: Pushrod ne flambe pas (Ø ≥ 3mm pour longueur ≤ 60mm)
-- [ ] T4.7: Pas de régression
+## ÉTAPE 5 — Pushrod Router (levier → joint)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: lever_tip_position + attachment_point + obstacles
+**Output**: pushrod_mesh (cylindre droit ou coudé)
 
----
+Quoi coder:
+  - route_pushrod(start, end, diameter=3.0, obstacles=[])
+  - Cas simple: ligne droite (cylindre de start à end)
+  - Cas complexe: si intersection avec obstacle → coude à 1 point
+  - Vérifier pas de collision pushrod ↔ chassis/walls
 
-## 🧱 BRIQUE 5 — Assemblage Complet (turtle_simple)
-**Objectif**: Assembler le tout sur turtle_simple — premier automate fonctionnel
+Tests étape 5:
+  ✅ Pushrod watertight
+  ✅ Pushrod de bonne longueur (distance start→end ±1mm)
+  ✅ Pushrod Ø correct
+  ✅ Pas de collision avec chassis (si obstacle fourni)
+  ✅ Cas droit + cas coudé testés
+  ✅ Régression: tout vert
 
-### Ce qu'on code:
-Intégration dans `AutomataGenerator.generate()`:
-1. Générer mécanisme (existant) ✅
-2. Générer figurine cosmétique (existant) ✅  
-3. **NOUVEAU**: Appliquer joints (split + pin joints)
-4. **NOUVEAU**: Router pushrods (levier → joint)
-5. Valider assemblage
+Risque: MOYEN — collision detection peut être lente sur gros meshes
 
-### Résultat attendu:
-```
-turtle_simple avec:
-- Carapace FIXE sur le châssis
-- Tête MOBILE sur pivot au cou (Ø3mm)  
-- Pushrod du lever_neck au bras de la tête
-- Quand le levier monte de 8mm → tête tourne de 30°
-- 4 pattes FIXES (pas articulées en V1 simple)
-- Queue FIXE
-```
 
-### Tests BRIQUE 5:
-- [ ] T5.1: turtle_simple génère sans crash
-- [ ] T5.2: Tête est une pièce SÉPARÉE du corps
-- [ ] T5.3: Pin joint visible entre tête et corps
-- [ ] T5.4: Pushrod connecte levier à tête
-- [ ] T5.5: 0 collisions pushrod↔body (le pushrod passe AUTOUR)
-- [ ] T5.6: STL export — toutes pièces watertight
-- [ ] T5.7: Rendu visuel montre l'articulation
-- [ ] T5.8: Tous les presets/espèces passent encore
+## ÉTAPE 6 — Assemblage Complet Tortue Simple (1 joint)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: turtle_simple preset
+**Output**: mécanisme + figurine avec tête articulée
 
----
+Quoi coder:
+  - Brancher étapes 1-5 dans le generate() pipeline
+  - UNIQUEMENT pour turtle_simple (1 seul joint = cou)
+  - Workflow:
+    1. FigurineBuilder crée le body (carapace + tête)
+    2. Body splitter coupe au cou
+    3. Pin joint ajoute axe + trous
+    4. Pushrod router connecte lever_neck → tête
+    5. Carapace = fixed au châssis
+    6. Tête = mobile, pivote sur axe du cou
 
-## 🧱 BRIQUE 6 — Assemblage Walking (turtle_walking)
-**Objectif**: 6 joints articulés (cou + 4 hanches + queue)
+Tests étape 6:
+  ✅ Toutes les pièces watertight
+  ✅ Tête peut pivoter ±30° sans collision
+  ✅ Pushrod connecté au bon endroit
+  ✅ Carapace fixe (pas de mouvement)
+  ✅ 0 collisions entre pièces fixes
+  ✅ Rendu visuel correct (4 vues)
+  ✅ Export STL OK
+  ✅ Régression: 9/9 presets, 17/17 dynamic, 13/13 debug
 
-### Ce qu'on code:
-- Appliquer les 6 JointDefs de la tortue marcheuse
-- 6 pushrods routés depuis les 6 leviers
-- Pattes articulées aux hanches
-- Queue articulée
+Risque: ÉLEVÉ — première intégration, beaucoup de pièces en jeu
+Mitigation: if-guard sur _figurine_cfg, fallback vers ancien mode si échec
 
-### Tests BRIQUE 6:
-- [ ] T6.1: 6 joints créés (6 axes + 6 trous)
-- [ ] T6.2: 6 pushrods routés
-- [ ] T6.3: Amplitudes correctes (tête 30°, pattes 20°, queue 15°)
-- [ ] T6.4: Gait pattern correct (diagonales en phase)
-- [ ] T6.5: ≤5 collisions (objectif 0)
-- [ ] T6.6: Export STL complet
-- [ ] T6.7: Pas de régression
 
----
+## ÉTAPE 7 — Turtle Walking (6 joints)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: turtle_walking preset  
+**Output**: mécanisme + figurine avec tête + 4 pattes + queue articulées
 
-## 🧱 BRIQUE 7 — Généralisation (12 body plans)
-**Objectif**: Appliquer le système à tous les types d'animaux
+Quoi coder:
+  - Étendre étape 6 à multiple joints
+  - Chaque patte = split + pin joint + pushrod
+  - Queue = split + pin joint + pushrod
+  - Gait timing: diagonales en phase (déjà codé dans les cames)
 
-### Ce qu'on code:
-- JOINT_TEMPLATES pour les 12 body plans
-- Auto-dimensionnement des articulations (formules Bloc 6)
-- Tests sur les 17 espèces dynamiques
+Tests étape 7:
+  ✅ 6 articulations fonctionnelles
+  ✅ Chaque patte pivote ±20°
+  ✅ Queue pivote ±15°
+  ✅ Tête pivote ±30°  
+  ✅ Pas de collision entre pattes adjacentes
+  ✅ 0 collision fixed-to-fixed
+  ✅ Régression: tout vert
 
-### C'est la DERNIÈRE brique — on y arrive seulement si B1-B6 sont solides.
+Risque: ÉLEVÉ — 6× plus de geometry + collisions
+Mitigation: implémenter 1 patte d'abord, valider, puis les 3 autres
 
----
 
-## 📅 ORDRE D'EXÉCUTION
+## ÉTAPE 8 — Généralisation Body Plans
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: BODY_PLAN_JOINTS table (RESEARCH_ARTICULATED.py)
+**Output**: n'importe quel body plan → figurine articulée
 
-```
-BRIQUE 1 → test → commit → push
-   ↓
-BRIQUE 2 → test → commit → push  
-   ↓
-BRIQUE 3 → test → commit → push
-   ↓
-BRIQUE 4 → test → commit → push
-   ↓
-BRIQUE 5 → test → commit → push  ← premier automate FONCTIONNEL
-   ↓
-BRIQUE 6 → test → commit → push
-   ↓
-BRIQUE 7 → test → commit → push  ← tous les animaux
-```
+Quoi coder:
+  - ArticulatedFigurineBuilder qui lit BODY_PLAN_JOINTS[body_type]
+  - Pour chaque joint dans le template → split + pin + pushrod
+  - Mapper automatiquement les cames du mécanisme aux joints
+  - Gérer les cas spéciaux (flexure, living hinge)
 
-Chaque brique: code → tests unitaires → tests régression → commit → push.
-Aucun skip. Aucun raccourci.
+Tests étape 8:
+  ✅ Les 12 body plans génèrent sans crash
+  ✅ Toutes les pièces watertight
+  ✅ 17/17 espèces dynamiques passent
+  ✅ Nouveaux constraint checks pour articulations
 
----
+Risque: TRÈS ÉLEVÉ — c'est le boss final
+Mitigation: faire 1 body plan à la fois, en commençant par les plus simples
 
-## 🧪 BATTERIE DE TESTS (à chaque brique)
 
-```bash
-# Tests unitaires de la brique
-python3 -c "... tests spécifiques ..."
+## ÉTAPE 9 — Constraint Engine Update
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Input**: assemblage articulé
+**Output**: nouveau bloc B10 de contraintes
 
-# Régression blocs
-python3 -c "import automata_unified_v4 as au; au.run_all_tests()"
+Nouveaux checks:
+  - JOINT_PIN_TOO_THIN: d_axe < 3mm
+  - JOINT_CLEARANCE_TIGHT: clearance < 0.1mm
+  - JOINT_CLEARANCE_LOOSE: clearance > 0.5mm
+  - JOINT_AMPLITUDE_EXCEEDED: θ > θ_max pour le type
+  - PUSHROD_BUCKLING: d < seuil Euler pour F et L donnés
+  - PUSHROD_COLLISION: pushrod intersecte une pièce fixe
+  - MOBILE_COLLISION_AT_MAX: pièce mobile touche fixed à amplitude max
+  - LIVING_HINGE_TOO_THIN: < 0.4mm
+  - LIVING_HINGE_CYCLES: PLA > 20 cycles warning
 
-# Régression presets  
-python3 regression_test.py
+Tests étape 9:
+  ✅ Chaque check déclenche correctement sur cas pathologique
+  ✅ Chaque check passe sur cas nominal
+  ✅ Intégré dans full_constraint_audit
+  ✅ Régression: tout vert
 
-# Régression dynamiques
-python3 regression_test_dynamic.py
 
-# Régression debug
-python3 debug_bugs.py
-
-# TOUT doit être vert avant commit
-```
+# ══════════════════════════════════════════════════════════════
+# RÉSUMÉ: 9 étapes, ~2-3 sessions de travail
+# ══════════════════════════════════════════════════════════════
+#
+# Étape 1: Pin Joint         → ISOLÉ, risque zéro      ⏱ 15min
+# Étape 2: Body Splitter     → ISOLÉ, risque faible     ⏱ 30min
+# Étape 3: Joint + Split     → COMBINÉ, risque moyen    ⏱ 30min
+# Étape 4: Pushrod Attach    → ISOLÉ, risque faible     ⏱ 15min
+# Étape 5: Pushrod Router    → ISOLÉ, risque moyen      ⏱ 30min
+# Étape 6: Turtle Simple     → INTÉGRATION, risque élevé⏱ 1h
+# Étape 7: Turtle Walking    → EXTENSION, risque élevé  ⏱ 1h
+# Étape 8: Tous Body Plans   → BOSS FINAL, risque max   ⏱ 2h
+# Étape 9: Constraints       → VALIDATION, risque moyen ⏱ 1h
+#
+# Total estimé: ~7h de travail réparti sur 2-3 sessions
+# ══════════════════════════════════════════════════════════════
