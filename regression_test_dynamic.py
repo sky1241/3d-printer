@@ -5,23 +5,23 @@ from scene_builder import make_automaton
 import automata_unified_v4 as au
 
 DYNAMIC_BASELINES = {
-    'chat': {'parts': 70, 'wt': 70},
+    'chat': {'parts': 74, 'wt': 74},
     'human': {'parts': 41, 'wt': 41},
     'eagle': {'parts': 54, 'wt': 54},
     'snake': {'parts': 28, 'wt': 28},
     'dolphin': {'parts': 37, 'wt': 37},
-    'ant': {'parts': 74, 'wt': 74},
+    'ant': {'parts': 78, 'wt': 78},
     'butterfly': {'parts': 45, 'wt': 45},
-    'spider': {'parts': 87, 'wt': 87},
-    'scorpion': {'parts': 123, 'wt': 123},
-    'crab': {'parts': 98, 'wt': 98},
-    'lobster': {'parts': 108, 'wt': 108},
+    'spider': {'parts': 91, 'wt': 91},
+    'scorpion': {'parts': 128, 'wt': 128},
+    'crab': {'parts': 102, 'wt': 102},
+    'lobster': {'parts': 113, 'wt': 113},
     'centipede': {'parts': 48, 'wt': 48},
     'octopus': {'parts': 80, 'wt': 80},
     'snail': {'parts': 45, 'wt': 45},
     'sunflower': {'parts': 20, 'wt': 20},
-    't-rex': {'parts': 60, 'wt': 60},
-    'dragon': {'parts': 95, 'wt': 95},
+    't-rex': {'parts': 64, 'wt': 64},
+    'dragon': {'parts': 99, 'wt': 99},
 }
 
 def run():

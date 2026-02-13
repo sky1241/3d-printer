@@ -8552,6 +8552,7 @@ class AutomataGenerator:
         # Only for parametric figurines (with _figurine_cfg).
         # Old presets use hardcoded FIGURINE_GENERATORS and don't need this.
         art_count = 0
+        _used_fig_parts = set()  # track which fig parts already got a joint
         if fig_cfg is not None:
           for jt in self.scene.joints:
             # Map scene joint to figurine parts
@@ -8562,7 +8563,17 @@ class AutomataGenerator:
             # Find the mobile fig part (the child)
             fig_mobile_key = f'fig_{child_name}'
             if fig_mobile_key not in self.all_parts:
-                continue  # No matching figurine part
+                # Fuzzy match: leg_fl → fig_leg_0, leg_fr → fig_leg_1, etc.
+                # Extract base type (e.g. "leg" from "leg_fl")
+                base_type = child_name.split('_')[0] if '_' in child_name else child_name
+                candidates = sorted([k for k in self.all_parts
+                                     if k.startswith(f'fig_{base_type}')
+                                     and k not in _used_fig_parts])
+                if candidates:
+                    fig_mobile_key = candidates[0]
+                else:
+                    continue  # No matching figurine part
+            _used_fig_parts.add(fig_mobile_key)
 
             # Find a "bridge" part (neck, etc.) that connects parent to child
             fig_bridge_key = None
