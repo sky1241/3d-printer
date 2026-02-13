@@ -1582,6 +1582,13 @@ class ChassisConfig:
     # 'central' = central pillar axis (carousels, turntables)
     # 'flat'    = minimal flat base, no walls (kinetic art, wave machines)
     chassis_type: str = 'box'
+    # ── Dual-shaft (auto-enabled for >6 cams) ──
+    dual_shaft: bool = False
+    dual_shaft_x_offset: float = 15.0   # ±offset from X=0 → 30mm center distance
+    sync_gear_module: float = 1.5        # ISO module for sync gears
+    sync_gear_teeth: int = 20            # teeth per gear (1:1 ratio)
+    sync_gear_thickness: float = 8.0     # mm
+    sync_gear_pressure_angle: float = 20.0  # degrees
 
     def __post_init__(self):
         if self.drive_mode == 'crank':
@@ -1590,11 +1597,30 @@ class ChassisConfig:
             self.motor_type = 'none'
             self.motor_diameter = 0.0
             self.motor_length = 0.0
+        # Dual-shaft: derive center distance from gear params
+        if self.dual_shaft:
+            center_dist = self.sync_gear_module * self.sync_gear_teeth
+            self.dual_shaft_x_offset = center_dist / 2.0
+
+    def enable_dual_shaft(self):
+        """Enable dual-shaft mode and recalculate geometry."""
+        self.dual_shaft = True
+        center_dist = self.sync_gear_module * self.sync_gear_teeth
+        self.dual_shaft_x_offset = center_dist / 2.0
+        self.compute_camshaft_length()
 
     def compute_camshaft_length(self):
         extra = 20.0 if self.drive_mode == 'crank' else 10.0  # extra for crank handle
-        self.camshaft_length = (self.num_cams * self.cam_spacing +
-                                 2 * self.plate_thickness + 2 * self.bearing_clearance + extra)
+        if self.dual_shaft:
+            # Each shaft gets ~half the cams + sync gear space
+            cams_per_shaft = math.ceil(self.num_cams / 2)
+            gear_space = self.sync_gear_thickness + 3.0  # gear + gap
+            self.camshaft_length = (cams_per_shaft * self.cam_spacing +
+                                     2 * self.plate_thickness + 2 * self.bearing_clearance +
+                                     gear_space + extra)
+        else:
+            self.camshaft_length = (self.num_cams * self.cam_spacing +
+                                     2 * self.plate_thickness + 2 * self.bearing_clearance + extra)
 
     @property
     def shaft_center_z(self) -> float:
@@ -1780,8 +1806,16 @@ def create_camshaft_bracket(config, z_position=40.0):
     w = config.width - 2*config.wall_thickness
     t, bh = config.plate_thickness, 15.0
     bracket = shapely_box(-w/2, 0, w/2, bh)
-    bracket = bracket.difference(Point(0, bh/2).buffer(
-        config.camshaft_diameter/2 + config.bearing_clearance, resolution=24))
+    bore_r = config.camshaft_diameter/2 + config.bearing_clearance
+    if config.dual_shaft:
+        # Two bores for dual-shaft
+        x_off = config.dual_shaft_x_offset
+        for x_pos in [-x_off, x_off]:
+            bore = Point(x_pos, bh/2).buffer(bore_r, resolution=24)
+            bracket = bracket.difference(bore)
+            if not bracket.is_valid: bracket = bracket.buffer(0)
+    else:
+        bracket = bracket.difference(Point(0, bh/2).buffer(bore_r, resolution=24))
     screw_r = (config.screw_diameter + config.screw_clearance) / 2
     for sx in [-1, 1]:
         bracket = bracket.difference(Point(sx*(w/2-5), bh/2).buffer(screw_r, resolution=16))
@@ -1942,23 +1976,216 @@ def generate_chassis(config, cam_count=1, follower_guides=None):
         return generate_chassis_box(config, cam_count, follower_guides)
 
 
+def generate_involute_gear_mesh(module: float = 1.5, teeth: int = 20,
+                                 pressure_angle_deg: float = 20.0,
+                                 thickness: float = 8.0,
+                                 bore_diameter: float = 6.0,
+                                 backlash_mm: float = 0.15,
+                                 n_involute_pts: int = 20) -> trimesh.Trimesh:
+    """Generate a spur gear mesh with true involute profile.
+
+    Parameters
+    ----------
+    module : metric module (mm)
+    teeth  : number of teeth
+    pressure_angle_deg : standard 20° for most gears
+    thickness : face width (mm)
+    bore_diameter : central bore for shaft
+    backlash_mm : circumferential backlash per tooth for FDM clearance
+    n_involute_pts : resolution of involute curve
+
+    Returns
+    -------
+    trimesh.Trimesh : gear mesh centered at origin, bore along Z
+    """
+    alpha = math.radians(pressure_angle_deg)
+    z = teeth
+    m = module
+
+    # Fundamental circles
+    r_pitch = m * z / 2.0          # pitch radius
+    r_base = r_pitch * math.cos(alpha)  # base circle
+    r_addendum = r_pitch + 1.0 * m     # outside
+    r_dedendum = r_pitch - 1.25 * m    # root
+    r_bore = bore_diameter / 2.0
+
+    # Ensure dedendum > base (avoid undercut issues for z < 17)
+    if r_dedendum < r_base:
+        r_dedendum = r_base - 0.1  # slight trim
+
+    # Angular pitch
+    tooth_angle = 2 * math.pi / z
+
+    # Involute function: inv(a) = tan(a) - a
+    def involute(a):
+        return math.tan(a) - a
+
+    # Tooth thickness at pitch circle (half-angle)
+    # s = m * (pi/2 + 2*x*tan(alpha)) where x=0 (no profile shift)
+    s_pitch = m * math.pi / 2.0 - backlash_mm
+    half_tooth_angle = s_pitch / (2.0 * r_pitch) + involute(alpha)
+
+    # Generate involute curve from base to addendum
+    def involute_points(r_start, r_end, n_pts):
+        """Generate involute points from r_start to r_end."""
+        pts = []
+        for i in range(n_pts):
+            r = r_start if n_pts <= 1 else r_start + (r_end - r_start) * i / (n_pts - 1)
+            if r < r_base:
+                # Below base circle: radial line to base
+                a_base = 0.0
+                angle = a_base
+            else:
+                # On involute
+                a = math.acos(r_base / r)
+                angle = involute(a)
+            pts.append((r, angle))
+        return pts
+
+    inv_pts = involute_points(max(r_dedendum, r_base * 0.98), r_addendum, n_involute_pts)
+
+    # Build one tooth profile (right flank + tip arc + left flank + root arc)
+    tooth_pts = []
+
+    # Right flank (involute, positive angle from tooth center)
+    for r, inv_angle in inv_pts:
+        a = half_tooth_angle - inv_angle
+        tooth_pts.append((r * math.cos(a), r * math.sin(a)))
+
+    # Tip arc (from right flank end to left flank start)
+    right_tip_angle = half_tooth_angle - involute_points(r_addendum, r_addendum, 1)[0][1]
+    # Actually use the last point angle
+    last_r, last_inv = inv_pts[-1]
+    right_tip_a = half_tooth_angle - last_inv
+    left_tip_a = -right_tip_a  # mirror
+
+    n_tip = 3
+    for i in range(1, n_tip + 1):
+        frac = i / (n_tip + 1)
+        a = right_tip_a + frac * (left_tip_a - right_tip_a)
+        tooth_pts.append((r_addendum * math.cos(a), r_addendum * math.sin(a)))
+
+    # Left flank (mirrored involute, negative angle)
+    for r, inv_angle in reversed(inv_pts):
+        a = -(half_tooth_angle - inv_angle)
+        tooth_pts.append((r * math.cos(a), r * math.sin(a)))
+
+    # Now replicate for all teeth and connect with root arcs
+    all_pts = []
+    for t_idx in range(z):
+        angle_offset = t_idx * tooth_angle
+        cos_o, sin_o = math.cos(angle_offset), math.sin(angle_offset)
+        for px, py in tooth_pts:
+            rx = px * cos_o - py * sin_o
+            ry = px * sin_o + py * cos_o
+            all_pts.append((rx, ry))
+
+        # Root arc to next tooth
+        root_start_a = angle_offset - half_tooth_angle + involute_points(
+            max(r_dedendum, r_base * 0.98), max(r_dedendum, r_base * 0.98), 1)[0][1]
+        # Simplified: use dedendum circle arc between teeth
+        next_offset = (t_idx + 1) * tooth_angle
+        a_end = angle_offset + tooth_angle / 2 + (tooth_angle / 2 - half_tooth_angle)
+        a_start = angle_offset - (tooth_angle / 2 - half_tooth_angle)
+
+        # Current tooth left flank ends at:
+        left_end_a = angle_offset - right_tip_a
+        # Next tooth right flank starts at:
+        next_right_a = next_offset + right_tip_a
+
+        # Root arc from left_end to next_right
+        n_root = 4
+        for i in range(1, n_root + 1):
+            frac = i / (n_root + 1)
+            a = left_end_a + frac * (next_right_a - left_end_a)
+            # Use dedendum radius for root
+            rr = r_dedendum
+            all_pts.append((rr * math.cos(a), rr * math.sin(a)))
+
+    # Close the polygon
+    gear_poly = ShapelyPolygon(all_pts)
+    if not gear_poly.is_valid:
+        gear_poly = gear_poly.buffer(0)
+
+    # Subtract bore
+    bore_circle = Point(0, 0).buffer(r_bore, resolution=32)
+    gear_poly = gear_poly.difference(bore_circle)
+    if not gear_poly.is_valid:
+        gear_poly = gear_poly.buffer(0)
+
+    # Add D-flat to bore for shaft keying
+    flat_depth = bore_diameter * 0.15
+    flat_box = shapely_box(-bore_diameter, -r_bore, bore_diameter, -r_bore + flat_depth)
+    gear_poly = gear_poly.difference(flat_box)
+    if not gear_poly.is_valid:
+        gear_poly = gear_poly.buffer(0)
+
+    # Extrude
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(gear_poly), thickness)
+    # Center Z
+    mesh.apply_translation([0, 0, -thickness / 2])
+    mesh.metadata['part_type'] = 'sync_gear'
+    mesh.metadata['module'] = module
+    mesh.metadata['teeth'] = teeth
+    mesh.metadata['pitch_diameter'] = 2 * r_pitch
+    return mesh
+
+
 def _make_shaft_and_drive(config, cam_count, cz, parts):
-    """Shared: camshaft + drive (crank or motor) + collars."""
+    """Shared: camshaft(s) + drive (crank or motor) + collars + sync gears."""
     half_len = config.camshaft_length / 2
-    shaft = trimesh.creation.cylinder(
-        radius=config.camshaft_diameter / 2,
-        segment=np.array([[0.0, -half_len, cz], [0.0, half_len, cz]]),
-        sections=24)
-    parts["camshaft"] = shaft
-    if config.drive_mode == 'crank':
-        parts["crank_handle"] = create_crank_handle(config, z_position=cz)
-        # Single retention collar on the far end (non-crank side)
-        # Crank handle prevents axial slide on one side, collar on the other
-        half_len = config.camshaft_length / 2
-        parts["collar_retention"] = create_printed_collar(
-            config, z_position=cz, y_position=half_len - 2.0)
+
+    if config.dual_shaft:
+        # ── DUAL-SHAFT MODE ──
+        x_off = config.dual_shaft_x_offset  # ±offset from center
+        for shaft_idx, x_pos in enumerate([-x_off, x_off]):
+            label = f"camshaft_{'A' if shaft_idx == 0 else 'B'}"
+            shaft = trimesh.creation.cylinder(
+                radius=config.camshaft_diameter / 2,
+                segment=np.array([[x_pos, -half_len, cz], [x_pos, half_len, cz]]),
+                sections=24)
+            shaft.metadata['part_type'] = 'camshaft'
+            parts[label] = shaft
+
+        # Sync gears at one end of the shafts (near motor/crank side)
+        gear_y = half_len - config.sync_gear_thickness / 2 - 2.0  # near the end
+        for shaft_idx, x_pos in enumerate([-x_off, x_off]):
+            gear = generate_involute_gear_mesh(
+                module=config.sync_gear_module,
+                teeth=config.sync_gear_teeth,
+                pressure_angle_deg=config.sync_gear_pressure_angle,
+                thickness=config.sync_gear_thickness,
+                bore_diameter=config.camshaft_diameter + 0.3,  # clearance fit
+                backlash_mm=0.20)  # extra backlash for FDM
+            # Rotate gear to XZ plane (bore along Y) then position
+            rot = trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0])
+            gear.apply_transform(rot)
+            gear.apply_translation([x_pos, gear_y, cz])
+            label = f"sync_gear_{'A' if shaft_idx == 0 else 'B'}"
+            parts[label] = gear
+
+        # Drive on shaft A (motor or crank)
+        if config.drive_mode == 'crank':
+            parts["crank_handle"] = create_crank_handle(config, z_position=cz)
+            parts["crank_handle"].apply_translation([-x_off, 0, 0])
+        else:
+            parts["motor_mount"] = create_motor_mount(config)
+            # Motor drives shaft A (left)
+            parts["motor_mount"].apply_translation([-x_off, 0, 0])
     else:
-        parts["motor_mount"] = create_motor_mount(config)
+        # ── SINGLE-SHAFT MODE (original) ──
+        shaft = trimesh.creation.cylinder(
+            radius=config.camshaft_diameter / 2,
+            segment=np.array([[0.0, -half_len, cz], [0.0, half_len, cz]]),
+            sections=24)
+        parts["camshaft"] = shaft
+        if config.drive_mode == 'crank':
+            parts["crank_handle"] = create_crank_handle(config, z_position=cz)
+            half_len = config.camshaft_length / 2
+            parts["collar_retention"] = create_printed_collar(
+                config, z_position=cz, y_position=half_len - 2.0)
+        else:
+            parts["motor_mount"] = create_motor_mount(config)
 
 
 def _add_follower_guides(parts, follower_guides, config):
@@ -3522,18 +3749,28 @@ def run_real_constraint_checks(gen, chassis_config):
     # trou1: cam collision (ADAPTED — use Y bounds, not Z, since our cams share Z)
     if len(gen.cam_meshes) > 1:
         cam_list_y = []
-        for cam in gen.cams:
+        dsa = getattr(gen, '_dual_shaft_assignment', None)
+        for idx, cam in enumerate(gen.cams):
             mn = f"cam_{cam.name}"
             m = gen.cam_meshes.get(mn)
             if m and len(m.faces) > 0:
                 b = m.bounds
-                cam_list_y.append({
+                entry = {
                     'name': cam.name,
                     'z_min_mm': float(b[0][1]),  # Using Y as "axial" for our layout
                     'z_max_mm': float(b[1][1]),
                     'Rmax_mm': float(max(b[1][0] - b[0][0], b[1][1] - b[0][1]) / 2),
                     'thickness_mm': float(b[1][2] - b[0][2]),
-                })
+                }
+                # Tag shaft for dual-shaft filtering
+                if dsa:
+                    if idx in dsa.get('A', []):
+                        entry['shaft_id'] = 'A'
+                    elif idx in dsa.get('B', []):
+                        entry['shaft_id'] = 'B'
+                    else:
+                        entry['shaft_id'] = 'A'
+                cam_list_y.append(entry)
         if cam_list_y:
             v1 = check_trou1_cam_collision(cam_list_y)
             for v in v1:
@@ -3739,19 +3976,40 @@ def run_real_constraint_checks(gen, chassis_config):
     # trou11: shaft deflection under cam loads
     shaft_span = chassis_config.camshaft_length
     has_mid_bearing = 'mid_bearing_wall' in gen.all_parts
+    dsa = getattr(gen, '_dual_shaft_assignment', None)
     if shaft_span > 0:
-        point_loads = []
-        cam_y_positions_sorted = sorted(
-            [(f"cam_{c.name}", gen.cam_meshes.get(f"cam_{c.name}"))
-             for c in gen.cams if gen.cam_meshes.get(f"cam_{c.name}")],
-            key=lambda x: float(x[1].bounds[0][1]) if x[1] is not None and len(x[1].faces) > 0 else 0
-        )
-        for i, (cn, cm) in enumerate(cam_y_positions_sorted):
+        # Build per-cam load list with shaft assignment
+        all_cam_loads = []
+        for idx, c in enumerate(gen.cams):
+            cm = gen.cam_meshes.get(f"cam_{c.name}")
             if cm and len(cm.faces) > 0:
                 y_pos = float((cm.bounds[0][1] + cm.bounds[1][1]) / 2) + shaft_span / 2
-                point_loads.append({'force_N': 1.5, 'position_mm': max(1, y_pos)})
-        if point_loads:
-            shaft_E = 200.0 if chassis_config.drive_mode == 'motor' else 3.5  # steel vs PLA GPa
+                sid = 'single'
+                if dsa:
+                    if idx in dsa.get('A', []):
+                        sid = 'A'
+                    elif idx in dsa.get('B', []):
+                        sid = 'B'
+                all_cam_loads.append({'force_N': 1.5, 'position_mm': max(1, y_pos), 'shaft_id': sid})
+
+        shaft_E = 200.0 if chassis_config.drive_mode == 'motor' else 3.5  # steel vs PLA GPa
+
+        if dsa and any(l['shaft_id'] != 'single' for l in all_cam_loads):
+            # Dual-shaft: check each shaft independently
+            for sid in ['A', 'B']:
+                shaft_loads = [{'force_N': l['force_N'], 'position_mm': l['position_mm']}
+                               for l in all_cam_loads if l['shaft_id'] == sid]
+                if shaft_loads:
+                    violations.extend(check_trou11_shaft_deflection(
+                        shaft_diameter_mm=chassis_config.camshaft_diameter,
+                        shaft_E_gpa=shaft_E,
+                        span_mm=shaft_span,
+                        point_loads=shaft_loads,
+                        quality='toy',
+                    ))
+        elif all_cam_loads:
+            point_loads = [{'force_N': l['force_N'], 'position_mm': l['position_mm']}
+                           for l in all_cam_loads]
             if has_mid_bearing:
                 # Mid-bearing splits shaft into 2 supported spans → check each half
                 half_span = shaft_span / 2
@@ -8508,6 +8766,17 @@ class AutomataGenerator:
         if n_cams > 6:
             chassis_config.cam_spacing = 6.0  # tighter spacing to reduce total length
             print(f"  ⚙ Auto-scale: cam_spacing=6mm ({n_cams} cams > 6)")
+
+        # ── DUAL-001: Auto-enable dual-shaft for >6 cams ──
+        if n_cams > 6 and not chassis_config.dual_shaft:
+            chassis_config.enable_dual_shaft()
+            # Widen chassis to fit 2 shafts + cam discs
+            x_off = chassis_config.dual_shaft_x_offset
+            min_width = 2 * (x_off + 35 + 5)  # offset + max cam radius + margin
+            chassis_config.width = max(chassis_config.width, round(min_width / 5) * 5)
+            print(f"  ⚙ DUAL-SHAFT enabled: {n_cams} cams → 2 shafts ±{x_off:.0f}mm "
+                  f"(sync gear M{chassis_config.sync_gear_module}×{chassis_config.sync_gear_teeth}t)")
+
         chassis_config.compute_camshaft_length()
 
         cz = chassis_config.shaft_center_z  # shaft height for cam/follower alignment
@@ -8617,29 +8886,87 @@ class AutomataGenerator:
                 cam_half_widths.append(4.0)  # fallback
 
         cam_gap = 2.0  # mm clearance between cams
-        cam_y_positions = []
-        y_cursor = 0.0
-        for idx, hw in enumerate(cam_half_widths):
-            if idx == 0:
-                y_cursor = hw  # first cam: center at its half-width
-            else:
-                y_cursor += cam_half_widths[idx - 1] + cam_gap + hw
-            cam_y_positions.append(y_cursor)
 
-        # Center on Y=0
-        y_center = (cam_y_positions[0] + cam_y_positions[-1]) / 2 if cam_y_positions else 0
-        cam_y_positions = [y - y_center for y in cam_y_positions]
+        if chassis_config.dual_shaft:
+            # ── DUAL-SHAFT: Split cams across 2 shafts ──
+            x_off = chassis_config.dual_shaft_x_offset
+            # Alternate cams between shafts for balanced load
+            shaft_A_indices = list(range(0, len(cam_names_ordered), 2))  # even
+            shaft_B_indices = list(range(1, len(cam_names_ordered), 2))  # odd
+            # Store assignment for later reference (constraints, BOM, etc.)
+            self._dual_shaft_assignment = {
+                'A': shaft_A_indices, 'B': shaft_B_indices,
+                'x_A': -x_off, 'x_B': x_off
+            }
+            print(f"  ⚙ Dual-shaft split: A={len(shaft_A_indices)} cams, B={len(shaft_B_indices)} cams")
 
-        # Apply translations
-        for idx, cn in enumerate(cam_names_ordered):
-            m = self.cam_meshes.get(cn)
-            if m is not None:
-                m.apply_translation([0, cam_y_positions[idx], cz - cam_thickness / 2])
+            cam_y_positions = [0.0] * len(cam_names_ordered)
+            cam_x_positions = [0.0] * len(cam_names_ordered)
 
-        # Update chassis cam_spacing to actual max for shaft length calculation
-        if len(cam_y_positions) > 1:
-            actual_span = cam_y_positions[-1] - cam_y_positions[0]
-            chassis_config.cam_spacing = actual_span / max(len(cam_y_positions) - 1, 1)
+            for shaft_label, indices, x_pos in [('A', shaft_A_indices, -x_off),
+                                                  ('B', shaft_B_indices, x_off)]:
+                # Compute Y positions for this shaft's cams
+                group_hws = [cam_half_widths[i] for i in indices]
+                group_y = []
+                y_cursor = 0.0
+                for gi, hw in enumerate(group_hws):
+                    if gi == 0:
+                        y_cursor = hw
+                    else:
+                        y_cursor += group_hws[gi - 1] + cam_gap + hw
+                    group_y.append(y_cursor)
+                # Center this group on Y=0
+                if group_y:
+                    y_center = (group_y[0] + group_y[-1]) / 2
+                    group_y = [y - y_center for y in group_y]
+                # Map back to global indices
+                for gi, global_idx in enumerate(indices):
+                    cam_y_positions[global_idx] = group_y[gi] if gi < len(group_y) else 0.0
+                    cam_x_positions[global_idx] = x_pos
+
+            # Apply translations (X + Y + Z)
+            for idx, cn in enumerate(cam_names_ordered):
+                m = self.cam_meshes.get(cn)
+                if m is not None:
+                    m.apply_translation([cam_x_positions[idx], cam_y_positions[idx],
+                                        cz - cam_thickness / 2])
+
+            # Update spacing based on the largest group
+            max_group_span = 0
+            for indices in [shaft_A_indices, shaft_B_indices]:
+                group_ys = [cam_y_positions[i] for i in indices]
+                if len(group_ys) > 1:
+                    span = max(group_ys) - min(group_ys)
+                    max_group_span = max(max_group_span, span)
+            if max_group_span > 0 and max(len(shaft_A_indices), len(shaft_B_indices)) > 1:
+                max_cams_per_shaft = max(len(shaft_A_indices), len(shaft_B_indices))
+                chassis_config.cam_spacing = max_group_span / max(max_cams_per_shaft - 1, 1)
+        else:
+            # ── SINGLE-SHAFT: Original placement ──
+            cam_y_positions = []
+            y_cursor = 0.0
+            for idx, hw in enumerate(cam_half_widths):
+                if idx == 0:
+                    y_cursor = hw  # first cam: center at its half-width
+                else:
+                    y_cursor += cam_half_widths[idx - 1] + cam_gap + hw
+                cam_y_positions.append(y_cursor)
+
+            # Center on Y=0
+            y_center = (cam_y_positions[0] + cam_y_positions[-1]) / 2 if cam_y_positions else 0
+            cam_y_positions = [y - y_center for y in cam_y_positions]
+
+            # Apply translations
+            for idx, cn in enumerate(cam_names_ordered):
+                m = self.cam_meshes.get(cn)
+                if m is not None:
+                    m.apply_translation([0, cam_y_positions[idx], cz - cam_thickness / 2])
+
+            # Update chassis cam_spacing to actual max for shaft length calculation
+            if len(cam_y_positions) > 1:
+                actual_span = cam_y_positions[-1] - cam_y_positions[0]
+                chassis_config.cam_spacing = actual_span / max(len(cam_y_positions) - 1, 1)
+
         chassis_config.num_cams = len(self.cams)
         chassis_config.compute_camshaft_length()
 
@@ -8713,12 +9040,19 @@ class AutomataGenerator:
         if chassis_config.camshaft_length > _max_span_no_mid and n_cams > 5:
             try:
                 mid_y = 0.0  # center of chassis (shaft runs in Y)
+                if chassis_config.dual_shaft:
+                    x_off = chassis_config.dual_shaft_x_offset
+                    shaft_pos = [(-x_off, cz), (x_off, cz)]
+                else:
+                    shaft_pos = [(0, cz)]
                 self.chassis_parts["mid_bearing_wall"] = create_mid_bearing_wall(
                     chassis_config,
-                    shaft_positions=[(0, cz)],  # one shaft at X=0, Z=cz
+                    shaft_positions=shaft_pos,
                     y_position=mid_y
                 )
-                print(f"  ⚙ Auto: mid-bearing wall added (shaft {chassis_config.camshaft_length:.0f}mm > {_max_span_no_mid:.0f}mm → deflection ÷16)")
+                n_shafts = len(shaft_pos)
+                print(f"  ⚙ Auto: mid-bearing wall ({n_shafts} bore{'s' if n_shafts > 1 else ''}, "
+                      f"shaft {chassis_config.camshaft_length:.0f}mm > {_max_span_no_mid:.0f}mm)")
             except Exception as e:
                 print(f"  ⚠ mid-bearing wall failed: {e}")
 
@@ -9273,6 +9607,7 @@ class AutomataGenerator:
 
         result = {"parts": self.all_parts, "cams": self.cams,
                 "cam_designs": getattr(self, '_cam_designs', {}),
+                "dual_shaft_assignment": getattr(self, '_dual_shaft_assignment', None),
                 "timing": self.timing_data, "motor": self.motor_check,
                 "validation": self.validation_results,
                 "assembly_violations": self.assembly_violations,
@@ -10378,6 +10713,9 @@ def check_trou1_cam_collision(cams: List[Dict]) -> List[Violation]:
         - z_min_mm, z_max_mm: positions axiales
         - Rmax_mm: rayon max de la came
         - thickness_mm: épaisseur
+        - shaft_id: 'A', 'B', or 'single' (optional)
+    
+    Only compares cams on the SAME shaft (dual-shaft aware).
     """
     violations = []
     z_gap_min = SAFETY["cam_z_gap_min_mm"]
@@ -10385,6 +10723,11 @@ def check_trou1_cam_collision(cams: List[Dict]) -> List[Violation]:
     for i in range(len(cams)):
         for j in range(i + 1, len(cams)):
             ci, cj = cams[i], cams[j]
+            # Skip comparison if cams are on different shafts
+            si = ci.get('shaft_id', 'single')
+            sj = cj.get('shaft_id', 'single')
+            if si != sj and si != 'single' and sj != 'single':
+                continue
             gap = cj["z_min_mm"] - ci["z_max_mm"]
             
             if gap < 0:
@@ -17784,6 +18127,18 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
                         cm.bounds[1][1] - cm.bounds[0][1]) / 2)
             data['cams'].append(cam_entry)
             
+            # ── Dual-shaft: tag each cam with its shaft ──
+            dsa = gen_result.get('dual_shaft_assignment')
+            if dsa:
+                if i in dsa.get('A', []):
+                    cam_entry['shaft_id'] = 'A'
+                elif i in dsa.get('B', []):
+                    cam_entry['shaft_id'] = 'B'
+                else:
+                    cam_entry['shaft_id'] = 'A'  # fallback
+            else:
+                cam_entry['shaft_id'] = 'single'
+            
             # ── Auto-clamp Rb ≥ Rb_min (same logic as generate() pipeline) ──
             # Presets may have small hardcoded Rb; enforce minimum here
             try:
@@ -17889,14 +18244,38 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
     
     # ── Shaft length from cam stack ──
     if data['cams']:
-        data['shaft']['total_length_mm'] = sum(
-            c.get('thickness_mm', 5) + 2 for c in data['cams']
-        ) + 20  # bearings + margins
-        for c in data['cams']:
-            data['shaft']['loads'].append({
-                'force_N': 5.0,
-                'position_mm': c.get('z_offset_mm', 0) + c.get('thickness_mm', 5) / 2,
-            })
+        dsa = gen_result.get('dual_shaft_assignment') if gen_result else None
+        if dsa:
+            # Dual-shaft: compute per-shaft (worst case = longer shaft)
+            shaft_groups = {'A': [], 'B': []}
+            for c in data['cams']:
+                sid = c.get('shaft_id', 'A')
+                shaft_groups.get(sid, shaft_groups['A']).append(c)
+            worst_len = 0
+            worst_loads = []
+            for sid, group in shaft_groups.items():
+                g_len = sum(c.get('thickness_mm', 5) + 2 for c in group) + 20
+                g_loads = []
+                for c in group:
+                    g_loads.append({
+                        'force_N': 5.0,
+                        'position_mm': c.get('z_offset_mm', 0) + c.get('thickness_mm', 5) / 2,
+                    })
+                if g_len > worst_len:
+                    worst_len = g_len
+                    worst_loads = g_loads
+            data['shaft']['total_length_mm'] = worst_len
+            data['shaft']['loads'] = worst_loads
+            data['shaft']['dual_shaft'] = True
+        else:
+            data['shaft']['total_length_mm'] = sum(
+                c.get('thickness_mm', 5) + 2 for c in data['cams']
+            ) + 20  # bearings + margins
+            for c in data['cams']:
+                data['shaft']['loads'].append({
+                    'force_N': 5.0,
+                    'position_mm': c.get('z_offset_mm', 0) + c.get('thickness_mm', 5) / 2,
+                })
     
     # ── Default hardware items (non-printed, always included) ──
     has_motor = data.get('motor', {}).get('name', '') != ''
