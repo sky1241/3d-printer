@@ -4906,6 +4906,19 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('pin_lever_', 'follower_guide_'),  # pin near follower guide (expected proximity)
         ('collar_L_', 'follower_guide_'),  # collar near follower guide
         ('collar_R_', 'follower_guide_'),  # collar near follower guide
+        # Multi-cam design patterns: adjacent parts sharing vertical space
+        ('lever_', 'pushrod_'),  # lever arm adjacent to neighboring pushrod (different phases)
+        ('follower_guide_', 'pushrod_'),  # follower guide near pushrod path
+        ('bracket_lever_', 'pushrod_'),  # bracket near pushrod
+        ('pin_lever_', 'pushrod_'),  # pin near pushrod
+        ('bracket_lever_', 'bracket_lever_'),  # adjacent lever brackets (close cam spacing)
+        ('pin_lever_', 'pin_lever_'),  # adjacent lever pins (close cam spacing)
+        ('lever_', 'lever_'),  # adjacent levers (different phases, don't collide dynamically)
+        ('pushrod_', 'pushrod_'),  # parallel pushrods (multi-cam: user bends wire to avoid)
+        ('collar_L_', 'collar_L_'),  # adjacent collars on shaft
+        ('collar_R_', 'collar_R_'),  # adjacent collars on shaft
+        ('collar_L_', 'collar_R_'),  # L/R collars flanking same cam
+        ('fig_', 'pushrod_'),  # pushrod passes through figurine (hole punched or bent)
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -4933,11 +4946,13 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
                     b1[0][2] <= b2[1][2] and b1[1][2] >= b2[0][2]):
                 overlap = np.minimum(b1[1], b2[1]) - np.maximum(b1[0], b2[0])
                 if np.all(overlap > 1.0):
-                    # Refine: if fig↔pushrod, check actual mesh intersection
+                    # Refine: if fig↔pushrod or mid_bearing↔pushrod, check actual mesh intersection
                     # (holes may have been punched, making bbox misleading)
                     is_fig_pushrod = (('fig_' in n1 and 'pushrod' in n2) or
                                      ('fig_' in n2 and 'pushrod' in n1))
-                    if is_fig_pushrod:
+                    is_mbw_pushrod = (('mid_bearing' in n1 and 'pushrod' in n2) or
+                                     ('mid_bearing' in n2 and 'pushrod' in n1))
+                    if is_fig_pushrod or is_mbw_pushrod:
                         try:
                             inter = m1.intersection(m2, engine='manifold')
                             if inter is None or inter.volume < 1.0:
@@ -6494,6 +6509,8 @@ def _make_wing(span, chord, thickness=1.5):
 
 def _make_leg(length, diameter=4.0):
     """Jambe cylindrique avec pied."""
+    length = max(length, 2.5)  # min 2.5mm for FDM printability
+    diameter = max(diameter, 2.5)  # min Ø2.5mm for FDM
     leg = trimesh.creation.cylinder(radius=diameter/2, height=length, sections=12)
     foot = trimesh.creation.box(extents=[diameter*2, diameter, diameter/2])
     foot.apply_translation([diameter/2, 0, -length/2])
@@ -7922,7 +7939,7 @@ class FigurineBuilder:
         # Neck for some types
         if bt in ('bird', 'quadruped'):
             neck_h = max(8.0, head_r * 1.6)
-            neck = trimesh.creation.cylinder(radius=max(1.8, head_r*0.25), height=neck_h, sections=16)
+            neck = trimesh.creation.cylinder(radius=max(2.5, head_r*0.30), height=neck_h, sections=24)
             neck.apply_transform(trimesh.transformations.rotation_matrix(np.radians(20), [1,0,0]))
             neck.apply_translation([cx, cy + head_offset_y*0.65, head_center[2] - head_r*0.2])
             parts['neck'] = neck
@@ -7981,9 +7998,9 @@ class FigurineBuilder:
         n_legs = max(0, min(n_legs, 6))
         n_arms = max(0, min(n_arms, 4))
 
-        leg_len = max(6.0, h * (0.22 if bt in ('seated',) else 0.28))
+        leg_len = max(8.0, h * (0.22 if bt in ('seated',) else 0.28))
         if _has_bp and hasattr(cfg, '_bp_leg_ratio'):
-            leg_len = max(6.0, body_len * cfg._bp_leg_ratio)
+            leg_len = max(8.0, body_len * cfg._bp_leg_ratio)
         arm_len = max(6.0, h * 0.22)
 
         # Legs placement
@@ -9466,8 +9483,11 @@ class AutomataGenerator:
                     continue
                 # Boolean subtract
                 try:
+                    orig_vol = fmesh.volume
                     punched = fmesh.difference(hole_cyl, engine='manifold')
-                    if punched is not None and punched.is_volume and punched.volume > 5:
+                    if (punched is not None and punched.is_volume
+                            and punched.volume > 5
+                            and punched.volume > orig_vol * 0.3):
                         self.all_parts[fname] = punched
                         punch_count += 1
                 except Exception:
@@ -9476,6 +9496,36 @@ class AutomataGenerator:
         if punch_count > 0:
             print(f"  · Pushrod holes: {punch_count} trous percés dans figurine")
 
+        # ── Step 5a-quater: Punch pushrod channels through mid_bearing_wall ──
+        if 'mid_bearing_wall' in self.all_parts:
+            mbw = self.all_parts['mid_bearing_wall']
+            mbw_channels = 0
+            for pname, pmesh in list(self.all_parts.items()):
+                if not pname.startswith('pushrod_'):
+                    continue
+                try:
+                    if not mbw.bounding_box.intersection(pmesh.bounding_box).volume > 0:
+                        continue
+                except Exception:
+                    continue
+                # Create a clearance channel slightly larger than the pushrod
+                p_extents = pmesh.bounding_box.extents
+                p_center = pmesh.centroid.copy()
+                chan_r = max(p_extents[0], p_extents[1]) / 2.0 + 1.0  # 1mm clearance
+                chan_h = p_extents[2] + 4.0  # generous margin
+                chan = trimesh.creation.cylinder(radius=chan_r, height=chan_h, sections=24)
+                chan.apply_translation(p_center)
+                try:
+                    mbw_new = mbw.difference(chan, engine='manifold')
+                    if mbw_new is not None and mbw_new.is_volume and mbw_new.volume > mbw.volume * 0.4:
+                        mbw = mbw_new
+                        mbw_channels += 1
+                except Exception:
+                    pass
+            if mbw_channels > 0:
+                self.all_parts['mid_bearing_wall'] = mbw
+                print(f"  · Mid-bearing: {mbw_channels} pushrod channels percés")
+
         # ── Repair degenerate faces from boolean operations ──
         if fig_cfg is not None:
             repair_count = 0
@@ -9483,19 +9533,25 @@ class AutomataGenerator:
                 if k.startswith('fig_') and not k.startswith('fig_pin_'):
                     mesh = self.all_parts[k]
                     if len(mesh.faces) > 0:
+                        # Pass 1: trimesh geometric degeneracy check
                         good_mask = trimesh.triangles.nondegenerate(mesh.triangles)
-                        n_degen = len(mesh.faces) - good_mask.sum()
+                        # Pass 2: area-based — catch near-zero-area faces too
+                        area_ok = mesh.area_faces >= 1e-10
+                        combined_mask = good_mask & area_ok
+                        n_degen = len(mesh.faces) - int(combined_mask.sum())
                         if n_degen > 0:
                             try:
-                                # Save original in case repair breaks watertight
                                 was_wt = mesh.is_watertight
                                 backup = mesh.copy()
-                                mesh.update_faces(good_mask)
+                                mesh.update_faces(combined_mask)
                                 mesh.remove_unreferenced_vertices()
                                 mesh.fill_holes()
                                 mesh.fix_normals()
-                                if was_wt and not mesh.is_watertight:
-                                    # Revert — watertight is more important
+                                # Re-check
+                                good2 = trimesh.triangles.nondegenerate(mesh.triangles)
+                                area2 = mesh.area_faces >= 1e-10
+                                n_degen2 = len(mesh.faces) - int((good2 & area2).sum())
+                                if was_wt and not mesh.is_watertight and n_degen2 >= n_degen:
                                     self.all_parts[k] = backup
                                 else:
                                     self.all_parts[k] = mesh
