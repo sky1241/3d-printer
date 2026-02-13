@@ -4919,6 +4919,9 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('collar_R_', 'collar_R_'),  # adjacent collars on shaft
         ('collar_L_', 'collar_R_'),  # L/R collars flanking same cam
         ('fig_', 'pushrod_'),  # pushrod passes through figurine (hole punched or bent)
+        ('cam_', 'cam_'),  # cams sit at different Y positions along shaft (2D profile overlap is visual only)
+        ('collar_L_', 'pushrod_'),  # collar on shaft, pushrod passes nearby
+        ('collar_R_', 'pushrod_'),  # collar on shaft, pushrod passes nearby
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
