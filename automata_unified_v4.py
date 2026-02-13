@@ -16580,19 +16580,42 @@ def extract_design_data(scene: 'AutomataScene', gen_result: Dict) -> Dict:
     return data
 
 
-def run_all_constraints(design_data: Dict, verbose: bool = True) -> 'ConstraintReport':
+def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport':
     """
     §C — Run all 90 constraint checks on extracted design data.
     Returns a ConstraintReport with all violations sorted by severity.
     
+    Accepts either:
+      - A dict from extract_design_data()
+      - An AutomataGenerator (auto-extracts design data)
+    
     Usage:
         scene = create_nodding_bird()
         gen = AutomataGenerator(scene, seed=42)
+        report = run_all_constraints(gen)  # direct!
+        # or:
         result = gen.generate()
         data = extract_design_data(scene, result)
         report = run_all_constraints(data)
-        print(report.summary())
     """
+    # Auto-detect: if passed an AutomataGenerator, extract design data
+    if isinstance(design_data, AutomataGenerator):
+        gen = design_data
+        # generate() returns a dict with all needed keys
+        if not gen.all_parts:
+            result = gen.generate()
+        else:
+            # Already generated — rebuild result dict from internal state
+            result = {
+                'parts': gen.all_parts,
+                'cam_meshes': gen.cam_meshes,
+                'cam_designs': getattr(gen, '_cam_designs', {}),
+                'cams': getattr(gen.scene, 'compiled_cams', []) if not isinstance(getattr(gen.scene, 'compiled_cams', ''), str) else [],
+                'timing': getattr(gen, '_timing_data', {}),
+                'motor': getattr(gen, '_motor_result', {}),
+            }
+        design_data = extract_design_data(gen.scene, result)
+    
     report = ConstraintReport()
     
     cams = design_data.get('cams', [])
