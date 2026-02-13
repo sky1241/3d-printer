@@ -6952,6 +6952,88 @@ class JointFactory:
         return hole_diameter > pin_diameter
 
     @staticmethod
+    def calculate_pushrod_attach(
+        joint_pos: tuple,
+        joint_axis: tuple,
+        lever_arm: float = 16.0,
+        pushrod_dir: tuple = (0, 0, -1),
+    ) -> tuple:
+        """Calcule le point d'attache du pushrod sur la partie mobile.
+
+        Le point d'attache est à distance lever_arm du pivot, dans une direction
+        perpendiculaire à l'axe de rotation ET alignée avec pushrod_dir.
+
+        Args:
+            joint_pos:   Position 3D du pivot
+            joint_axis:  Direction de l'axe de rotation du joint
+            lever_arm:   Longueur du bras de levier (mm) — distance pivot→attache
+            pushrod_dir: Direction générale du pushrod (typiquement vers le bas)
+
+        Returns:
+            (attach_point, arm_direction): tuple
+              - attach_point: np.array 3D du point d'attache
+              - arm_direction: np.array 3D unitaire (direction pivot→attache)
+        """
+        joint_pos = np.array(joint_pos, dtype=float)
+        joint_axis = np.array(joint_axis, dtype=float)
+        joint_axis = joint_axis / np.linalg.norm(joint_axis)
+        pushrod_dir = np.array(pushrod_dir, dtype=float)
+        pushrod_dir = pushrod_dir / np.linalg.norm(pushrod_dir)
+
+        # Direction du bras = composante de pushrod_dir perpendiculaire à joint_axis
+        arm_dir = pushrod_dir - np.dot(pushrod_dir, joint_axis) * joint_axis
+        arm_len = np.linalg.norm(arm_dir)
+        if arm_len < 1e-6:
+            # pushrod_dir est parallèle à joint_axis → fallback: prendre une perp arbitraire
+            perp = np.array([1, 0, 0]) if abs(joint_axis[0]) < 0.9 else np.array([0, 1, 0])
+            arm_dir = np.cross(joint_axis, perp)
+        arm_dir = arm_dir / np.linalg.norm(arm_dir)
+
+        attach_point = joint_pos + lever_arm * arm_dir
+        return attach_point, arm_dir
+
+    @staticmethod
+    def create_pushrod_socket(
+        attach_point: tuple,
+        pushrod_diameter: float = 3.0,
+        socket_depth: float = 5.0,
+        clearance: float = 0.15,
+        socket_direction: tuple = (0, 0, -1),
+    ) -> 'trimesh.Trimesh':
+        """Crée un cylindre-socket à soustraire de la partie mobile.
+
+        Le pushrod s'insère dans ce socket avec jeu.
+
+        Args:
+            attach_point:     Position 3D du centre du socket
+            pushrod_diameter: Diamètre du pushrod (mm)
+            socket_depth:     Profondeur du socket (mm)
+            clearance:        Jeu radial (mm)
+            socket_direction: Direction d'insertion du pushrod
+
+        Returns:
+            socket_mesh: trimesh.Trimesh (cylindre à soustraire)
+        """
+        socket_r = (pushrod_diameter + 2 * clearance) / 2.0
+        socket = trimesh.creation.cylinder(
+            radius=socket_r, height=socket_depth + 1.0,  # +1mm pour traverser
+            sections=JointFactory.SEGMENTS)
+
+        # Orienter le socket selon socket_direction
+        sock_dir = np.array(socket_direction, dtype=float)
+        sock_dir = sock_dir / np.linalg.norm(sock_dir)
+        z_axis = np.array([0.0, 0.0, 1.0])
+        if abs(np.dot(z_axis, sock_dir)) < 0.9999:
+            rot_axis = np.cross(z_axis, sock_dir)
+            rot_axis = rot_axis / np.linalg.norm(rot_axis)
+            angle = np.arccos(np.clip(np.dot(z_axis, sock_dir), -1, 1))
+            rot_mat = trimesh.transformations.rotation_matrix(angle, rot_axis)
+            socket.apply_transform(rot_mat)
+
+        socket.apply_translation(np.array(attach_point, dtype=float))
+        return socket
+
+    @staticmethod
     def add_joint_to_split(
         fixed_mesh: 'trimesh.Trimesh',
         mobile_mesh: 'trimesh.Trimesh',
