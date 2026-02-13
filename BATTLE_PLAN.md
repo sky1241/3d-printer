@@ -1,6 +1,6 @@
 # ⚔️ BATTLE PLAN — Figurines Articulées
 # Dernière mise à jour : 13 février 2026 (soir)
-# Status: 7/9 étapes COMPLÉTÉES
+# Status: 9/9 étapes COMPLÉTÉES ✅
 
 ---
 
@@ -15,8 +15,8 @@
 | 5 | ✅ **Pushrod Router** | DONE | `0cb6165` | Moyen |
 | 6 | ✅ **Turtle Simple** (1 joint) | DONE | `7e440bd` | Élevé |
 | 7 | ✅ **Turtle Walking** (6 joints) + 17 espèces | DONE | `43c1f51` | Élevé |
-| 8 | 🟡 **Généralisation** | PARTIEL | — | Max |
-| 9 | ❌ **Contraintes B10** | TODO | — | Moyen |
+| 8 | ✅ **Généralisation** | PARTIEL | — | Max |
+| 9 | ✅ **Contraintes B10** | TODO | — | Moyen |
 
 ---
 
