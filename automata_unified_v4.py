@@ -16615,18 +16615,26 @@ def run_all_constraints(design_data, verbose: bool = True) -> 'ConstraintReport'
     Accepts either:
       - A dict from extract_design_data()
       - An AutomataGenerator (auto-extracts design data)
+      - An AutomataScene (auto-wraps in generator, generates, extracts)
     
     Usage:
-        scene = create_nodding_bird()
+        scene = make_automaton("chat")
+        report = run_all_constraints(scene)  # direct from scene!
+        # or:
         gen = AutomataGenerator(scene, seed=42)
-        report = run_all_constraints(gen)  # direct!
+        report = run_all_constraints(gen)  # from generator
         # or:
         result = gen.generate()
         data = extract_design_data(scene, result)
         report = run_all_constraints(data)
     """
+    # Auto-detect: if passed an AutomataScene, wrap in generator first
+    if isinstance(design_data, AutomataScene):
+        gen = AutomataGenerator(design_data)
+        result = gen.generate()
+        design_data = extract_design_data(gen.scene, result)
     # Auto-detect: if passed an AutomataGenerator, extract design data
-    if isinstance(design_data, AutomataGenerator):
+    elif isinstance(design_data, AutomataGenerator):
         gen = design_data
         # generate() returns a dict with all needed keys
         if not gen.all_parts:
