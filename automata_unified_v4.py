@@ -1075,7 +1075,7 @@ def cam_profile_to_mesh(x_cam, y_cam, thickness=5.0, bore_diameter=4.0,
     else:
         bore_r = (bore_diameter + bore_clearance) / 2
         if bore_r > 0:
-            bore = Point(0, 0).buffer(bore_r, resolution=24)
+            bore = Point(0, 0).buffer(bore_r, quad_segs=24)
             cam_poly = cam_poly.difference(bore)
     
     if not cam_poly.is_valid:
@@ -1522,8 +1522,8 @@ class GenevaParams:
 def generate_geneva_driven_mesh(params, thickness=5.0, slot_width=None):
     if slot_width is None: slot_width = params.pin_radius * 2 + 1.0
     R = params.driven_radius + 5
-    disk = Point(0, 0).buffer(R, resolution=64)
-    disk = disk.difference(Point(0, 0).buffer(2.5, resolution=24))
+    disk = Point(0, 0).buffer(R, quad_segs=64)
+    disk = disk.difference(Point(0, 0).buffer(2.5, quad_segs=24))
     for i in range(params.n_slots):
         angle = 2*np.pi*i/params.n_slots
         x1, y1 = 5*np.cos(angle), 5*np.sin(angle)
@@ -1536,9 +1536,9 @@ def generate_geneva_driven_mesh(params, thickness=5.0, slot_width=None):
 
 def generate_geneva_driver_mesh(params, thickness=5.0):
     R = params.driver_radius
-    disk = Point(0,0).buffer(R, resolution=48)
-    disk = disk.difference(Point(0,0).buffer(2.5, resolution=24))
-    pin = Point(R, 0).buffer(params.pin_radius, resolution=16)
+    disk = Point(0,0).buffer(R, quad_segs=48)
+    disk = disk.difference(Point(0,0).buffer(2.5, quad_segs=24))
+    pin = Point(R, 0).buffer(params.pin_radius, quad_segs=16)
     disk = unary_union([disk, pin])
     if not disk.is_valid: disk = disk.buffer(0)
     return trimesh.creation.extrude_polygon(ensure_polygon(disk), thickness)
@@ -1641,11 +1641,11 @@ class ChassisConfig:
 def create_base_plate(config):
     w, d, t = config.width, config.depth, config.plate_thickness
     plate = shapely_box(-w/2, -d/2, w/2, d/2)
-    plate = plate.difference(Point(0, -d/4).buffer(config.motor_diameter/2+0.5, resolution=32))
+    plate = plate.difference(Point(0, -d/4).buffer(config.motor_diameter/2+0.5, quad_segs=32))
     screw_r = (config.screw_diameter + config.screw_clearance) / 2
     for sx in [-1, 1]:
         for sy in [-1, 1]:
-            plate = plate.difference(Point(sx*(w/2-8), sy*(d/2-8)).buffer(screw_r, resolution=16))
+            plate = plate.difference(Point(sx*(w/2-8), sy*(d/2-8)).buffer(screw_r, quad_segs=16))
     if not plate.is_valid: plate = plate.buffer(0)
     return trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
 
@@ -1664,14 +1664,14 @@ def create_lever_arm(pivot_pos, input_length, output_length,
     # Min wall = 1.5mm (≥3 perimeters × 0.4mm nozzle) around bore
     min_wall = 1.5
     hub_r = pivot_bore_d / 2 + min_wall
-    hub = Point(0, 0).buffer(hub_r, resolution=24)
+    hub = Point(0, 0).buffer(hub_r, quad_segs=24)
     arm_2d = arm_2d.union(hub)
     # Rounded ends
-    tip_in = Point(0, -input_length).buffer(arm_thickness/2, resolution=8)
-    tip_out = Point(0, output_length).buffer(arm_thickness/2, resolution=8)
+    tip_in = Point(0, -input_length).buffer(arm_thickness/2, quad_segs=8)
+    tip_out = Point(0, output_length).buffer(arm_thickness/2, quad_segs=8)
     arm_2d = arm_2d.union(tip_in).union(tip_out)
     # Now subtract the bore — hub guarantees single connected body
-    bore = Point(0, 0).buffer(pivot_bore_d/2, resolution=16)
+    bore = Point(0, 0).buffer(pivot_bore_d/2, quad_segs=16)
     arm_2d = arm_2d.difference(bore)
     if not arm_2d.is_valid:
         arm_2d = arm_2d.buffer(0)
@@ -1750,8 +1750,8 @@ def create_collar(pivot_pos, pin_diameter, offset_y, wall_thickness=3.0):
     collar_t = 1.5  # thickness
     
     # Create annulus profile (ring cross-section) via shapely
-    outer_ring = Point(0, 0).buffer(collar_od / 2, resolution=16)
-    inner_ring = Point(0, 0).buffer(collar_id / 2, resolution=16)
+    outer_ring = Point(0, 0).buffer(collar_od / 2, quad_segs=16)
+    inner_ring = Point(0, 0).buffer(collar_id / 2, quad_segs=16)
     annulus = outer_ring.difference(inner_ring)
     if annulus.is_empty or not annulus.is_valid:
         annulus = outer_ring  # fallback to solid disc
@@ -1779,12 +1779,12 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
             boss_r = br + min_wall
             if boss_r > t / 2:
                 # Boss extends both directions around bore center
-                boss = Point(t/2, pz).buffer(boss_r, resolution=24)
+                boss = Point(t/2, pz).buffer(boss_r, quad_segs=24)
                 wall = wall.union(boss)
                 if not wall.is_valid:
                     wall = wall.buffer(0)
             # Cut the through-bore (always a clean circle, fully inside wall now)
-            bore = Point(t/2, pz).buffer(br, resolution=24)
+            bore = Point(t/2, pz).buffer(br, quad_segs=24)
             wall = wall.difference(bore)
             if not wall.is_valid:
                 wall = wall.buffer(0)
@@ -1812,14 +1812,14 @@ def create_camshaft_bracket(config, z_position=40.0):
         # Two bores for dual-shaft
         x_off = config.dual_shaft_x_offset
         for x_pos in [-x_off, x_off]:
-            bore = Point(x_pos, bh/2).buffer(bore_r, resolution=24)
+            bore = Point(x_pos, bh/2).buffer(bore_r, quad_segs=24)
             bracket = bracket.difference(bore)
             if not bracket.is_valid: bracket = bracket.buffer(0)
     else:
-        bracket = bracket.difference(Point(0, bh/2).buffer(bore_r, resolution=24))
+        bracket = bracket.difference(Point(0, bh/2).buffer(bore_r, quad_segs=24))
     screw_r = (config.screw_diameter + config.screw_clearance) / 2
     for sx in [-1, 1]:
-        bracket = bracket.difference(Point(sx*(w/2-5), bh/2).buffer(screw_r, resolution=16))
+        bracket = bracket.difference(Point(sx*(w/2-5), bh/2).buffer(screw_r, quad_segs=16))
     if not bracket.is_valid: bracket = bracket.buffer(0)
     mesh = trimesh.creation.extrude_polygon(ensure_polygon(bracket), t)
     mesh.apply_translation([0, 0, z_position])
@@ -1838,7 +1838,7 @@ def create_motor_mount(config):
     for sx in [-1, 1]:
         tab = shapely_box(sx*outer_r-(tab_w if sx>0 else 0), -tab_h,
                           sx*outer_r+(0 if sx>0 else tab_w), 0)
-        screw = Point(sx*(outer_r+tab_w/2*(1 if sx<0 else -1)), -tab_h/2).buffer(1.6, resolution=12)
+        screw = Point(sx*(outer_r+tab_w/2*(1 if sx<0 else -1)), -tab_h/2).buffer(1.6, quad_segs=12)
         tab = tab.difference(screw)
         cradle = unary_union([cradle, tab])
     if not cradle.is_valid: cradle = cradle.buffer(0)
@@ -1899,9 +1899,9 @@ def create_mid_bearing_wall(config, shaft_positions, y_position=0.0):
     bore_r = config.camshaft_diameter / 2 + config.bearing_clearance
     for sx, sz in shaft_positions:
         local_z = sz - config.plate_thickness
-        bore = Point(sx, local_z).buffer(bore_r, resolution=24)
+        bore = Point(sx, local_z).buffer(bore_r, quad_segs=24)
         boss_r = bore_r + 1.5
-        boss = Point(sx, local_z).buffer(boss_r, resolution=24)
+        boss = Point(sx, local_z).buffer(boss_r, quad_segs=24)
         wall = wall.union(boss)
         if not wall.is_valid: wall = wall.buffer(0)
         wall = wall.difference(bore)
@@ -2109,7 +2109,7 @@ def generate_involute_gear_mesh(module: float = 1.5, teeth: int = 20,
         gear_poly = gear_poly.buffer(0)
 
     # Subtract bore
-    bore_circle = Point(0, 0).buffer(r_bore, resolution=32)
+    bore_circle = Point(0, 0).buffer(r_bore, quad_segs=32)
     gear_poly = gear_poly.difference(bore_circle)
     if not gear_poly.is_valid:
         gear_poly = gear_poly.buffer(0)
@@ -2235,7 +2235,7 @@ def generate_chassis_frame(config, cam_count=1, follower_guides=None):
     # Base plate (simple, no motor hole in crank mode)
     plate = shapely_box(-w/2, -d/2, w/2, d/2)
     if config.drive_mode != 'crank':
-        plate = plate.difference(Point(0, -d/4).buffer(config.motor_diameter/2+0.5, resolution=32))
+        plate = plate.difference(Point(0, -d/4).buffer(config.motor_diameter/2+0.5, quad_segs=32))
     if not plate.is_valid: plate = plate.buffer(0)
     parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
 
@@ -2253,7 +2253,7 @@ def generate_chassis_frame(config, cam_count=1, follower_guides=None):
         rail_shape = shapely_box(-rail_w/2, 0, rail_w/2, rail_h)
         # Bearing hole
         br = config.camshaft_diameter/2 + config.bearing_clearance
-        rail_shape = rail_shape.difference(Point(0, rail_h/2).buffer(br, resolution=24))
+        rail_shape = rail_shape.difference(Point(0, rail_h/2).buffer(br, quad_segs=24))
         if not rail_shape.is_valid: rail_shape = rail_shape.buffer(0)
         mesh = trimesh.creation.extrude_polygon(ensure_polygon(rail_shape), d - 15)
         mesh.apply_translation([sx*(w/2 - post_r - 2), -d/2 + 7.5, cz])
@@ -2275,9 +2275,9 @@ def generate_chassis_central(config, cam_count=1, follower_guides=None):
 
     # Circular base plate
     base_r = max(w, d) / 2
-    base = Point(0, 0).buffer(base_r, resolution=48)
+    base = Point(0, 0).buffer(base_r, quad_segs=48)
     if config.drive_mode != 'crank':
-        base = base.difference(Point(base_r * 0.6, 0).buffer(config.motor_diameter/2+0.5, resolution=32))
+        base = base.difference(Point(base_r * 0.6, 0).buffer(config.motor_diameter/2+0.5, quad_segs=32))
     if not base.is_valid: base = base.buffer(0)
     parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(base), t)
 
@@ -2289,9 +2289,9 @@ def generate_chassis_central(config, cam_count=1, follower_guides=None):
     # Top bearing ring (holds the shaft horizontally through the pillar top)
     bearing_ring_r = pillar_r + 3
     bearing_ring_h = 5.0
-    ring_shape = Point(0, 0).buffer(bearing_ring_r, resolution=32)
+    ring_shape = Point(0, 0).buffer(bearing_ring_r, quad_segs=32)
     ring_shape = ring_shape.difference(
-        Point(0, 0).buffer(config.camshaft_diameter/2 + config.bearing_clearance, resolution=24))
+        Point(0, 0).buffer(config.camshaft_diameter/2 + config.bearing_clearance, quad_segs=24))
     if not ring_shape.is_valid: ring_shape = ring_shape.buffer(0)
     ring = trimesh.creation.extrude_polygon(ensure_polygon(ring_shape), bearing_ring_h)
     ring.apply_translation([0, 0, pillar_h + t])
@@ -2315,7 +2315,7 @@ def generate_chassis_flat(config, cam_count=1, follower_guides=None):
 
     plate = shapely_box(-flat_w/2, -flat_d/2, flat_w/2, flat_d/2)
     if config.drive_mode != 'crank':
-        plate = plate.difference(Point(0, -flat_d/4).buffer(config.motor_diameter/2+0.5, resolution=32))
+        plate = plate.difference(Point(0, -flat_d/4).buffer(config.motor_diameter/2+0.5, quad_segs=32))
     if not plate.is_valid: plate = plate.buffer(0)
     parts["base_plate"] = trimesh.creation.extrude_polygon(ensure_polygon(plate), t)
 
@@ -2326,7 +2326,7 @@ def generate_chassis_flat(config, cam_count=1, follower_guides=None):
     for side, sx in [("left", -1), ("right", 1)]:
         brk = shapely_box(-bracket_w/2, 0, bracket_w/2, bracket_h)
         br = config.camshaft_diameter/2 + config.bearing_clearance
-        brk = brk.difference(Point(0, bracket_h * 0.6).buffer(br, resolution=24))
+        brk = brk.difference(Point(0, bracket_h * 0.6).buffer(br, quad_segs=24))
         if not brk.is_valid: brk = brk.buffer(0)
         mesh = trimesh.creation.extrude_polygon(ensure_polygon(brk), 8.0)
         mesh.apply_translation([sx*(flat_w/2 - 8), -4, t])
@@ -2618,7 +2618,7 @@ def make_bore_hole_2d(center_x: float, center_y: float,
     else:
         r = cfg.shaft_diameter / 2
     
-    return Point(center_x, center_y).buffer(r, resolution=24)
+    return Point(center_x, center_y).buffer(r, quad_segs=24)
 
 
 def make_chamfered_bore_3d(mesh: trimesh.Trimesh,
@@ -2702,7 +2702,7 @@ def make_d_shaft_bore_2d(center_x: float, center_y: float,
         cfg = JointConfig()
     
     r = (cfg.shaft_diameter + 2 * cfg.bore_press_clearance) / 2
-    circle = Point(center_x, center_y).buffer(r, resolution=32)
+    circle = Point(center_x, center_y).buffer(r, quad_segs=32)
     
     # D-flat: cut a flat on one side
     flat_depth = cfg.d_flat_depth + cfg.d_flat_clearance
@@ -2788,7 +2788,7 @@ def make_m3_hole_2d(center_x: float, center_y: float,
     else:
         r = cfg.m3_clearance_hole / 2
     
-    return Point(center_x, center_y).buffer(r, resolution=16)
+    return Point(center_x, center_y).buffer(r, quad_segs=16)
 
 
 def make_m3_insert_pocket_2d(center_x: float, center_y: float,
@@ -2803,8 +2803,8 @@ def make_m3_insert_pocket_2d(center_x: float, center_y: float,
     if cfg is None:
         cfg = JointConfig()
     
-    hole = Point(center_x, center_y).buffer(cfg.m3_insert_hole / 2, resolution=16)
-    cbore = Point(center_x, center_y).buffer(cfg.m3_counterbore_dia / 2, resolution=16)
+    hole = Point(center_x, center_y).buffer(cfg.m3_insert_hole / 2, quad_segs=16)
+    cbore = Point(center_x, center_y).buffer(cfg.m3_counterbore_dia / 2, quad_segs=16)
     return hole, cbore
 
 
@@ -3154,7 +3154,7 @@ def create_bearing_wall_with_joints(config: 'ChassisConfig',
                 slot_cx = t / 2
                 # Semi-circle at bearing center + vertical slot to top
                 from shapely.geometry import Point as _Pt
-                bore_circle = _Pt(slot_cx, pz).buffer(slot_r, resolution=24)
+                bore_circle = _Pt(slot_cx, pz).buffer(slot_r, quad_segs=24)
                 slot_rect = shapely_box(slot_cx - slot_r, pz, slot_cx + slot_r, h + 1)
                 u_slot = bore_circle.union(slot_rect)
                 wall = wall.difference(u_slot)
@@ -6549,8 +6549,10 @@ def _make_eyes(head_mesh, head_center, head_radius, eye_radius=0.8,
     
     return parts
 
-def _make_cone_beak(radius, height, direction=[1, 0, 0]):
+def _make_cone_beak(radius, height, direction=None):
     """Cône orienté (bec d'oiseau ou museau)."""
+    if direction is None:
+        direction = [1, 0, 0]
     beak = trimesh.creation.cone(radius=radius, height=height, sections=12)
     # Default cone points along Z, rotate to desired direction
     d = np.array(direction, dtype=float)
