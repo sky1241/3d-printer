@@ -1,100 +1,106 @@
 # 🔩 ROADMAP — ÉTAT RÉEL DU PROJET
 
-> Dernière mise à jour: 2026-02-13
-> Audit complet sur les 17 builders × 118 espèces
+> Dernière mise à jour: 13 février 2026 — post-fix CAM_ROLLER + P0 crash
+> Audit complet sur 17 builders × 118 espèces
+> Commit: 7418f59
 
 ---
 
 ## 📊 ÉTAT DES LIEUX
 
 ### Ce qui MARCHE ✅
-- 17 templates de génération (quadruped, biped, flapper, snake, swimmer, insect_6leg, insect_fly, arachnid, scorpion, crab, lobster, myriapod, octopus, snail, plant, dino_biped, dragon)
-- 118 espèces dans la DB (animaux, insectes, fantasy, plantes)
+- 17 templates de génération couvrant 118 espèces
 - `make_automaton("chat")` → scène complète pour N'IMPORTE QUEL animal
 - 17/17 builders génèrent sans crash, toutes pièces watertight
 - Chaîne cinématique came→levier→pushrod→figurine fonctionnelle
-- Moteur de contraintes (95 checks définis)
-- Site web + Flask UI + Export STL
+- `run_all_constraints()` accepte Scene, Generator et Dict (P0 fixé)
+- Murs avec vrais through-bores (euler=0, A1_STRICT OK)
+- Ratio roller/cam ≤ 0.27 (CAM_ROLLER_LARGE éliminé)
+- Axe Z aligné : cames, murs, followers tous sur l'arbre
+- Rb cappé à 50mm (plus de cames géantes)
+- Site web Flask + Export STL
 - 94/94 tests master, 49/49 scene_builder, 20/20 living_beings
 
-### Ce qui est CASSÉ 🔴
+### Ce qui RESTE À FIXER 🔴
 
-**BUG P0: `run_all_constraints(gen)` crash sur make_automaton()**
-- Les 9 presets hardcodés passent → mais `make_automaton("chat")` crash
-- `'AutomataGenerator' object has no attribute 'get'`
-- **AUCUN des 17 builders dynamiques n'est validé mécaniquement**
+| # | Bug | Espèces | Gravité | Difficulté | Root cause |
+|---|-----|---------|---------|------------|------------|
+| BUG-010 | wall∩follower COLLISION | 13/17 | P1 | Moyenne | Placement spatial X |
+| BUG-011 | SHAFT_DEFLECTION | 11/17 | P1 | Haute | Arbre Ø4mm trop long |
+| BUG-012 | CAMSHAFT_OVERSIZED | 11/17 | P1 | Haute | 1 seul arbre, toutes cames |
+| BUG-013 | MOTOR_OVERLOADED | 3/17 | P2 | Moyenne | Couple > 90mN·m |
+| BUG-014 | TOO_MANY_CAMS | 1/17 | P2 | Haute | Scorpion 13 cames |
 
-**COUVERTURE: 4/17 builders testés (23%)**
-- Testés: quadruped, biped, flapper, swimmer
-- ZÉRO coverage: snake, insect_6leg, insect_fly, arachnid, scorpion, crab, lobster, myriapod, octopus, snail, plant, dino_biped, dragon
-
-**PROBLÈMES MÉCANIQUES (détectés sur les 17 builders):**
-
-| Animal | Pièces | Status |
-|--------|--------|--------|
-| chat, human, eagle, snake, dolphin, ant, butterfly, centipede, sunflower, t-rex, snail | 13-55 | ✅ 0 erreurs |
-| spider (69p), octopus (62p) | 62-69 | 🔴 Shaft deflection |
-| crab (76p) | 76 | 🔴 Shaft + camshaft 222mm + motor -8% |
-| lobster (83p) | 83 | 🔴 Shaft + camshaft 251mm + motor -19% |
-| scorpion (97p) | 97 | 🔴 13 cames, shaft 2.3mm, 293mm, motor -40% |
-| dragon (69p) | 69 | 🔴 Shaft 1.7mm + camshaft 310mm |
-
-**BUGS SYSTÉMIQUES:**
-1. SHAFT_DEFLECTION — arbre trop flexible quand >6 cames
-2. CAMSHAFT_OVERSIZED — arbre trop long pour Ender-3 220mm
-3. MOTOR_TORQUE — moteur insuffisant pour gros animaux
-4. TOO_MANY_CAMS — scorpion 13 cames > max 12
-5. ASSEMBLY_COLLISIONS — wall∩follower_guide partout (SPATIAL-1..4)
-6. 47/95 contraintes mortes (jamais appelées)
-7. A1_STRICT — murs U-slots au lieu de vrais trous
-8. Cames surdimensionnées (waving_cat 141mm, blacksmith 125mm)
-9. CAM_ROLLER_LARGE — r_galet/Rb > 0.35 sur TOUS les presets
+**Espèces 100% clean : sunflower, snake (2/17)**
 
 ---
 
-## 🎯 PLAN D'ACTION
+## 🎯 PLAN D'ACTION — Priorisé
 
-### P0 — BLOQUANT
-- [ ] FIX `run_all_constraints()` pour accepter les builds dynamiques
-- [ ] Étendre regression à 17 builders (1 animal par template)
+### P1-A : COLLISION wall∩follower (BUG-010) — PROCHAIN FIX
+- Décaler followers_guides pour éviter overlap avec murs
+- Impact : 13 espèces d'un coup
+- Effort : ~30 min
+- Fichier : `generate()` dans automata_unified_v4.py
 
-### P1 — MÉCANIQUE
-- [ ] DUAL-SHAFT pour >6 cames (engrenage sync) → **DEEP RESEARCH NÉCESSAIRE**
-- [ ] MOTOR AUTO-SCALE: réduire amplitudes si torque > seuil
-- [ ] SPATIAL FIX: décaler followers pour éviter collisions murs
+### P1-B : SHAFT + OVERSIZED (BUG-011 + BUG-012)
+- Option rapide : palier intermédiaire + arbre Ø6mm
+- Option complète : dual-shaft avec engrenage sync → **DEEP RESEARCH**
+- Impact : 11 espèces
+- Effort : 2-4h (option rapide) ou research + implémentation (option complète)
 
-### P2 — QUALITÉ
-- [ ] A1_STRICT: vrais trous dans murs (boolean CSG)
-- [ ] Capper Rb_max pendant auto-design came
-- [ ] Activer les 47 checks morts
-- [ ] Fix CAM_ROLLER_LARGE ratio
+### P2-A : MOTOR_OVERLOADED (BUG-013)
+- Auto-réduction des amplitudes quand torque > seuil
+- Ou ajout ratio de réduction engrenage
+- Impact : 3 espèces
 
-### P3 — FINITION
-- [ ] STL Export pour les 17 builders
+### P2-B : CONTRAINTES MORTES
+- 47/95 contraintes jamais appelées
+- Progressivement activer et brancher
+
+### P3 : FINITION
+- [ ] STL Export par espèce
 - [ ] Instructions assemblage PDF
-- [ ] Profils slicer
-- [ ] BOM complet
+- [ ] Profils slicer (Cura/PrusaSlicer)
+- [ ] BOM complet (visserie, moteur, alim)
 
 ---
 
-## 🔬 DEEP RESEARCH?
+## 🔬 DEEP RESEARCH NÉCESSAIRE?
 
 | Sujet | Research? | Raison |
 |-------|-----------|--------|
 | Dual-shaft >6 cames | **OUI** | Engrenages PLA imprimés, sync, tolérance |
-| Tout le reste | NON | Bugs d'API, clamps, extensions de tests |
+| Tout le reste | NON | Bugs de placement, clamps, math |
 
 ---
 
 ## 📈 MÉTRIQUES
 
 ```
-Master tests:        94/94 ✅
-Scene builder:       49/49 ✅
-Living beings:       20/20 ✅
-Regression:          9/9  ✅ (9 presets hardcodés seulement)
-Debug:               12/13 ✅ (A1_STRICT seul failure)
-Builders testés:     4/17 (23%)
-Espèces testées:     9/118 (7.6%)
-Constraint coverage: 48/95 (50.5%)
+Master tests:        94/94  ✅
+Scene builder:       49/49  ✅
+Living beings:       20/20  ✅
+Regression presets:  9/9    ✅
+Regression dynamic:  17/17  ✅
+Debug bugs:          13/13  ✅
+Builders testés:     17/17  (100%)
+Espèces supportées:  118
+Z-axis alignment:    17/17  ✅ (toutes espèces)
+Through-bores:       17/17  ✅ (euler=0)
+CAM_ROLLER warnings: 0      ✅
+Espèces 100% clean:  2/17   (sunflower, snake)
 ```
+
+## 📝 HISTORIQUE COMMITS (sessions 13 fév)
+
+| Commit | Description | Impact |
+|--------|-------------|--------|
+| `7418f59` | FIX: CAM_ROLLER_LARGE — ratio rf/Rb ≤ 0.27 | 17/17 espèces |
+| `521e5b7` | P0-FIX: run_all_constraints() accepte AutomataScene | 17/17 espèces |
+| `f6153d3` | fix P0+CAM: tests 17 builders + Rb cap 50mm | 17/17 espèces |
+| `0872f00` | fix CAM-1: cap Rb_max=50mm + binary search amplitude | Cames oversized |
+| `1601960` | fix A1_STRICT: vrais trous dans les murs | Through-bores |
+| `a930f82` | fix P0: run_all_constraints() accepte Generator | Pipeline crash |
+| `b20bdab` | docs: ROADMAP audit complet | Documentation |
+| `e75cac6` | fix: restore levers + scale + pushrod + baselines | Leviers restaurés |
