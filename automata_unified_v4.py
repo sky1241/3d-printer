@@ -7617,6 +7617,14 @@ class AutomataGenerator:
 
         # Step 4: Motor check
         print("[4/8] Moteur...")
+        # Auto-upgrade motor for high-cam species (N20 298:1 has ~300 mN·m stall)
+        n_cams = len(self.cams)
+        if n_cams > 8 and self.scene.motor_stall_torque_mNm < 300:
+            self.scene.motor_stall_torque_mNm = 300.0
+            print(f"  ⚙ Auto-upgrade: N20 298:1 (300 mN·m stall) for {n_cams} cams")
+        elif n_cams > 6 and self.scene.motor_stall_torque_mNm < 200:
+            self.scene.motor_stall_torque_mNm = 200.0
+            print(f"  ⚙ Auto-upgrade: N20 150:1 (200 mN·m stall) for {n_cams} cams")
         self.motor_check = check_motor_feasibility(opt_peak, self.scene.motor_stall_torque_mNm)
         s = "✓" if self.motor_check["feasible"] else "✗"
         print(f"  {s} {self.motor_check['recommendation']} (marge: {self.motor_check['margin_percent']}%)")
