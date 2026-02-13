@@ -8870,6 +8870,34 @@ class AutomataGenerator:
         if punch_count > 0:
             print(f"  · Pushrod holes: {punch_count} trous percés dans figurine")
 
+        # ── Annotate fixed vs mobile fig parts for assembly ──
+        if fig_cfg is not None and art_count > 0:
+            mobile_parts = set()
+            for jt in self.scene.joints:
+                child = jt.child_link.lower() if jt.child_link else ''
+                ckey = f'fig_{child}'
+                if ckey in self.all_parts:
+                    mobile_parts.add(ckey)
+                base = child.split('_')[0] if '_' in child else child
+                for k in self.all_parts:
+                    if k.startswith(f'fig_{base}_') or k == f'fig_{base}':
+                        mobile_parts.add(k)
+                for bname in [f'fig_neck', f'fig_{child}_connector']:
+                    if bname in self.all_parts:
+                        mobile_parts.add(bname)
+                for k in self.all_parts:
+                    if k.startswith('fig_eye'):
+                        mobile_parts.add(k)
+            for k, m in self.all_parts.items():
+                if not k.startswith('fig_'):
+                    continue
+                if 'pin_' in k:
+                    m.metadata['assembly_role'] = 'pin_joint'
+                elif k in mobile_parts:
+                    m.metadata['assembly_role'] = 'mobile'
+                else:
+                    m.metadata['assembly_role'] = 'fixed'
+
         total_faces = sum(len(m.faces) for m in self.all_parts.values())
         print(f"  → Total: {len(self.all_parts)} pièces, {total_faces} faces")
 
