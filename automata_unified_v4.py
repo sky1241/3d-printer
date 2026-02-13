@@ -1716,21 +1716,16 @@ def create_bearing_wall(config, side="left", bearing_positions=None):
     if bearing_positions:
         for py, pz in bearing_positions:
             br = config.camshaft_diameter/2 + config.bearing_clearance
-            # Always use a proper through-bore with a local boss for reinforcement
+            # Ensure bore is fully enclosed: boss must extend both sides
             min_wall = 1.5  # ≥3 perimeters × 0.4mm nozzle
             boss_r = br + min_wall
-            if 2 * boss_r > t:
-                # Bore needs more material than wall thickness provides.
-                # Add a local boss that only extends OUTWARD (x<0 in profile)
-                # to avoid collisions with internal parts (follower guides etc.)
+            if boss_r > t / 2:
+                # Boss extends both directions around bore center
                 boss = Point(t/2, pz).buffer(boss_r, resolution=24)
-                # Clip: allow outward extension (x < 0) but not past inside face (x > t)
-                clip = shapely_box(-boss_r * 2, pz - boss_r * 2, t, pz + boss_r * 2)
-                boss = boss.intersection(clip)
                 wall = wall.union(boss)
                 if not wall.is_valid:
                     wall = wall.buffer(0)
-            # Cut the through-bore (always a clean circle)
+            # Cut the through-bore (always a clean circle, fully inside wall now)
             bore = Point(t/2, pz).buffer(br, resolution=24)
             wall = wall.difference(bore)
             if not wall.is_valid:

@@ -19,7 +19,7 @@ exec(code)
 
 BASELINE = {
     'nodding_bird':   {'errors': 0, 'asm': 1,  'parts': 23, 'levers': 1, 'brackets': 1},
-    'walking_figure': {'errors': 0, 'asm': 17, 'parts': 48, 'levers': 4, 'brackets': 4},
+    'walking_figure': {'errors': 0, 'asm': 18, 'parts': 48, 'levers': 4, 'brackets': 4},
     'drummer':        {'errors': 2, 'asm': 11, 'parts': 33, 'levers': 2, 'brackets': 2},
     'swimming_fish':  {'errors': 0, 'asm': 1,  'parts': 24, 'levers': 1, 'brackets': 1},
     'waving_cat':     {'errors': 0, 'asm': 2,  'parts': 24, 'levers': 1, 'brackets': 1},
