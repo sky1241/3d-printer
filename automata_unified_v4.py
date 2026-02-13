@@ -6952,6 +6952,86 @@ class JointFactory:
         return hole_diameter > pin_diameter
 
     @staticmethod
+    def add_joint_to_split(
+        fixed_mesh: 'trimesh.Trimesh',
+        mobile_mesh: 'trimesh.Trimesh',
+        joint_pos: tuple,
+        joint_axis: tuple,
+        pin_diameter: float = 3.0,
+        clearance: float = None,
+    ) -> tuple:
+        """Ajoute un pivot (trou + axe) aux 2 parties d'un mesh splitté.
+
+        Perce un trou dans fixed ET mobile, crée un axe séparé qui traverse les 2.
+
+        Args:
+            fixed_mesh:   Partie fixe (sortie de split_at_joint)
+            mobile_mesh:  Partie mobile (sortie de split_at_joint)
+            joint_pos:    Position 3D du centre du joint
+            joint_axis:   Direction de l'axe de rotation (le pin va dans cette direction)
+            pin_diameter: Diamètre de l'axe (mm)
+            clearance:    Jeu radial (mm), None=auto
+
+        Returns:
+            (fixed_with_hole, mobile_with_hole, pin_mesh): 3 meshes trimesh
+              - fixed_with_hole:  fixed percé
+              - mobile_with_hole: mobile percé
+              - pin_mesh:         axe cylindrique séparé, positionné au joint
+        """
+        joint_pos = np.array(joint_pos, dtype=float)
+        joint_axis = np.array(joint_axis, dtype=float)
+        ax_len = np.linalg.norm(joint_axis)
+        if ax_len < 1e-9:
+            raise ValueError("joint_axis must be non-zero")
+        joint_axis = joint_axis / ax_len
+
+        if clearance is None:
+            clearance = JointFactory.PIN_CLEARANCE_TABLE.get(
+                pin_diameter, JointFactory.DEFAULT_CLEARANCE)
+
+        # Déterminer la longueur du pin : traverser les 2 parties + marges
+        # On prend la taille combinée des 2 meshes le long de joint_axis
+        all_verts = np.vstack([fixed_mesh.vertices, mobile_mesh.vertices])
+        projections = all_verts @ joint_axis
+        span = projections.max() - projections.min()
+        pin_length = min(span + 2.0, 30.0)  # +2mm marge, cap 30mm
+
+        # ── Créer pin et hole ──
+        pin, hole = JointFactory.create_pin_joint(
+            diameter=pin_diameter, length=pin_length + 2.0,
+            clearance=clearance, with_chamfer=False)
+
+        # ── Orienter le pin selon joint_axis ──
+        # Par défaut trimesh crée les cylindres le long de Z
+        # On doit les aligner avec joint_axis
+        z_axis = np.array([0.0, 0.0, 1.0])
+        if abs(np.dot(z_axis, joint_axis)) < 0.9999:
+            rot_axis = np.cross(z_axis, joint_axis)
+            rot_axis = rot_axis / np.linalg.norm(rot_axis)
+            angle = np.arccos(np.clip(np.dot(z_axis, joint_axis), -1, 1))
+            rot_mat = trimesh.transformations.rotation_matrix(angle, rot_axis)
+            pin.apply_transform(rot_mat)
+            hole.apply_transform(rot_mat)
+
+        # ── Positionner au joint ──
+        pin.apply_translation(joint_pos)
+        hole.apply_translation(joint_pos)
+
+        # ── Boolean subtract: percer les trous ──
+        try:
+            fixed_with_hole = fixed_mesh.difference(hole, engine='manifold')
+        except Exception:
+            # Fallback: retourner sans trou plutôt que crasher
+            fixed_with_hole = fixed_mesh
+
+        try:
+            mobile_with_hole = mobile_mesh.difference(hole, engine='manifold')
+        except Exception:
+            mobile_with_hole = mobile_mesh
+
+        return fixed_with_hole, mobile_with_hole, pin
+
+    @staticmethod
     def split_at_joint(
         mesh: 'trimesh.Trimesh',
         cut_point: tuple,
