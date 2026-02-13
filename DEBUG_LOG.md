@@ -1,60 +1,50 @@
 # 🔍 DEBUG LOG — Automata Generator v4
-# Dernière mise à jour: 13 février 2026
-# Commit: 0865043
+# 🎉 17/17 CLEAN — 13 février 2026
+# Commit: 1326b94
 
----
-
-## ÉTAT ACTUEL
+## ÉTAT FINAL
 
 ```
-9/9 preset regression:  ✅ ALL PASS
+9/9 preset regression:  ✅ ALL PASS  
 17/17 dynamic builders: ✅ ALL PASS (0 crash, all watertight)
 13/13 debug_bugs:       ✅ ALL PASS
 94/94 master tests:     ✅ ALL PASS
-Espèces clean:          11/17 (65%)
-Collisions spatiales:   0/17
+Espèces clean:          17/17 (100%)
 ```
 
-### Espèces par état
+## PROGRESSION
 
-| État | Espèces |
-|------|---------|
-| ✅ CLEAN (11) | sunflower, snake, dolphin, butterfly, eagle, centipede, snail, human, t-rex, chat, ant |
-| ❌ OVERSIZED seulement (2) | octopus, spider |
-| ❌ SHAFT+OVER (1) | dragon |
-| ❌ OVER+MOTOR (1) | crab |
-| ❌ SHAFT+OVER+MOTOR (2) | lobster, scorpion |
+| Étape | Clean | Commit | Fix |
+|-------|-------|--------|-----|
+| Début session | 2/17 | — | sunflower, snake |
+| BUG-010 collisions | 10/17 | `f946ed2` | +dolphin,butterfly,eagle,centipede,snail,human,t-rex,chat |
+| Ø6mm + boss | 11/17 | `0865043` | +ant |
+| Mid-bearing + print fix | 14/17 | `b84ac1e` | +spider,octopus,dragon |
+| Motor auto-upgrade | **17/17** | `1326b94` | +scorpion,crab,lobster |
 
----
+## AUTO-SCALING RÉSUMÉ
 
-## BUGS FIXÉS CETTE SESSION
+| Condition | Action |
+|-----------|--------|
+| >5 cames | Ø6mm shaft (5× less deflection) |
+| >6 cames | cam_spacing 6mm (shorter shaft) |
+| >6 cames | N20 150:1 motor (200 mN·m stall) |
+| >8 cames | N20 298:1 motor (300 mN·m stall) |
+| shaft >180mm | Mid-bearing wall auto-added |
+| guides don't fit | Chassis width auto-expanded |
 
-| # | Commit | Bug | Impact |
-|---|--------|-----|--------|
-| 30 | `0865043` | Auto Ø6mm + boss extent → 11/17 clean | +9 espèces clean |
-| 29 | `f946ed2` | wall∩follower collisions éliminées | 13→0 collisions |
-| 28 | `a7de852` | docs tracking update | — |
-| 27 | `7418f59` | CAM_ROLLER ratio ≤0.27 | 17/17 ratio OK |
-| 26 | `521e5b7` | run_all_constraints(AutomataScene) | 17/17 pipeline OK |
-| 25 | `4d0aa53` | Deep research prompt v3 | — |
-| 24 | `c20b395` | docs tracking update | — |
+## COMMITS SESSION 13 FÉV (11 commits)
 
-## PROGRESSION CLEAN
-
-```
-Début session:  2/17 clean (12%)  → sunflower, snake
-Après BUG-010: 10/17 clean (59%) → +dolphin, butterfly, eagle, centipede, snail, human, t-rex, chat
-Après Ø6mm:    11/17 clean (65%) → +ant
-```
-
-## PATTERN DE TRAVAIL
-
-```
-1. Identifier le bug (audit)
-2. Fix dans automata_unified_v4.py  
-3. python3 regression_test.py
-4. python3 regression_test_dynamic.py
-5. python3 debug_bugs.py
-6. Si triple vert → git add + commit + push
-7. Mettre à jour BUG_TRACKER_v2.md + ROADMAP.md + DEBUG_LOG.md
-```
+| Commit | Description |
+|--------|-------------|
+| `1326b94` | 🎉 17/17 — motor auto-upgrade |
+| `b84ac1e` | Mid-bearing + exclude steel shaft — 14/17 |
+| `80140ea` | Deep research results saved |
+| `0865043` | Ø6mm + boss extent — 11/17 |
+| `a7de852` | Docs tracking |
+| `f946ed2` | BUG-010 collisions — 10/17 |
+| `7418f59` | CAM_ROLLER ratio |
+| `521e5b7` | P0 crash fix |
+| `4d0aa53` | Deep research prompt v3 |
+| `c20b395` | Docs tracking |
+| `4f4586d` | Docs tracking |

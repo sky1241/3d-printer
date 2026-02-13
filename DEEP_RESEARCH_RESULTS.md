@@ -149,9 +149,9 @@ SI n_cams > MAX_CAMS_PER_SHAFT (6):
 | Bug | Commit fixé | Research utilisée | Status |
 |-----|------------|-------------------|--------|
 | BUG-010 | `f946ed2` | — (spatial fix) | ✅ DONE |
-| BUG-011 SHAFT | `0865043` (Ø6mm) | D2 confirmé | ✅ Partiel (3/11 restent) |
-| BUG-012 OVERSIZED | — | D1 dual-shaft | 🔴 À IMPL |
-| BUG-013 MOTOR | — | D3 dual-motor | 🔴 À IMPL |
-| FIX-HERTZ | — | D5 correction formule | 🔴 À IMPL |
+| BUG-011 SHAFT | `b84ac1e` (mid-bearing) | D2 confirmé | ✅ DONE |
+| BUG-012 OVERSIZED | `b84ac1e` | D2 (shaft=steel, not printed) | ✅ DONE |
+| BUG-013 MOTOR | `1326b94` | D3 N20 298:1 stall=300mN·m | ✅ DONE |
+| FIX-HERTZ | — | D5: code déjà correct | ✅ N/A |
 | AUTO Ø6mm | `0865043` | D2 I=63.62mm⁴ | ✅ DONE |
 | AUTO spacing | `0865043` | D1 (réduction long.) | ✅ DONE |
