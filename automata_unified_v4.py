@@ -4514,6 +4514,24 @@ def run_real_constraint_checks(gen, chassis_config):
                             value=pin_mesh.volume, limit=mobile.volume * 0.5))
                     break
 
+        # Check return mechanism adequacy
+        for pin_name, pin_mesh in pin_parts.items():
+            ret_type = pin_mesh.metadata.get('return_mechanism', '')
+            grav_torque = pin_mesh.metadata.get('gravity_torque_mNm', 0)
+            joint_label = pin_name.replace('fig_pin_', '')
+            
+            if ret_type == 'spring_needed':
+                violations.append(Violation(
+                    "JOINT_NO_RETURN", Severity.WARNING,
+                    f"Joint '{joint_label}': gravité insuffisante — ressort de rappel nécessaire",
+                    "Ajouter un ressort imprimé (leaf spring) ou contrepoids"))
+            elif ret_type == 'gravity' and grav_torque < 0.5:
+                violations.append(Violation(
+                    "JOINT_WEAK_GRAVITY", Severity.INFO,
+                    f"Joint '{joint_label}': couple gravité faible ({grav_torque:.1f} mNm) — friction pourrait bloquer",
+                    "Vérifier que les surfaces de contact sont lisses (ponçage)",
+                    value=grav_torque, limit=0.5))
+
     # ── CLASSIFY BY SEVERITY ──
     critical = [v for v in violations if v.severity == Severity.ERROR]
     warnings = [v for v in violations if v.severity == Severity.WARNING]
@@ -8758,6 +8776,39 @@ class AutomataGenerator:
                 pin_name = f'fig_pin_{jt.name}'
                 self.all_parts[pin_name] = pin_mesh
                 art_count += 1
+
+                # ── Return mechanism detection ──
+                # For vertical pushrod motion (Z-axis), gravity provides return:
+                # pushrod pushes UP → gravity pulls mobile part back DOWN
+                # For horizontal motion, gravity doesn't help → need spring
+                mobile_mass_g = fig_mobile.volume * 1.24e-3  # PLA ~1.24 g/cm³
+                lever_arm_mm = max(abs(fig_mobile.centroid[2] - joint_pos[2]), 2.0)
+                gravity_torque_mNm = mobile_mass_g * 9.81 * lever_arm_mm / 1000.0
+                
+                # Check if motion is predominantly vertical
+                # Find the track that drives this joint
+                motion_vertical = True  # default: most automata are vertical
+                for track in self.scene.tracks:
+                    if track.name == jt.name:
+                        # LIFT/NOD = vertical, SLIDE/WAVE = could be horizontal
+                        if hasattr(track, 'segments'):
+                            for seg in track.segments:
+                                if hasattr(seg, 'kind') and seg.kind in ('SLIDE', 'WAVE'):
+                                    motion_vertical = False
+                        break
+                
+                # Joint axis check: if axis is Z (vertical), motion is horizontal → no gravity
+                axis_z_component = abs(joint_axis[2]) if len(joint_axis) > 2 else 0
+                if axis_z_component > 0.9:
+                    motion_vertical = False  # rotation around Z = horizontal swing
+                
+                gravity_ok = motion_vertical and mobile_mass_g > 0.1  # need at least 0.1g
+                return_type = 'gravity' if gravity_ok else 'spring_needed'
+                
+                pin_mesh.metadata['return_mechanism'] = return_type
+                pin_mesh.metadata['gravity_torque_mNm'] = round(gravity_torque_mNm, 2)
+                pin_mesh.metadata['mobile_mass_g'] = round(mobile_mass_g, 1)
+                fig_mobile.metadata['return_mechanism'] = return_type
 
             except Exception as e:
                 print(f"  ⚠ Articulation {jt.name}: {e}")
