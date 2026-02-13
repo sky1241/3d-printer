@@ -9159,6 +9159,28 @@ class AutomataGenerator:
         self.all_parts.update(self.chassis_parts)
         self.all_parts.update(self.cam_meshes)
 
+        # ── FIX-MECH-1: Shelf — platform for figurine to sit on ──
+        # Without this, the figurine floats in the void above the chassis.
+        _shelf_z = chassis_config.total_height  # top of walls
+        # Use actual wall positions to size shelf (wall_thickness config may differ from actual)
+        _wl = self.chassis_parts.get('wall_left')
+        _wr = self.chassis_parts.get('wall_right')
+        if _wl is not None and _wr is not None:
+            _shelf_w = _wr.bounds[0][0] - _wl.bounds[1][0] - 0.5  # 0.25mm clearance each side
+            _shelf_d = chassis_config.depth - 2 * chassis_config.wall_thickness - 1.0
+        else:
+            _shelf_w = chassis_config.width - 2 * chassis_config.wall_thickness - 1.0
+            _shelf_d = chassis_config.depth - 2 * chassis_config.wall_thickness - 1.0
+        _shelf_thick = 3.0
+        _shelf = trimesh.creation.box([_shelf_w, _shelf_d, _shelf_thick])
+        _shelf.apply_translation([0, 0, _shelf_z + _shelf_thick / 2])
+        _shelf.metadata['part_type'] = 'shelf'
+        self.all_parts['fig_shelf'] = _shelf
+        self._shelf_z_top = _shelf_z + _shelf_thick  # top surface Z for figurine base
+
+        # Storage for transmission arm endpoints (FIX-MECH-3)
+        self._xmit_arm_targets = {}  # joint_name → np.array([x, y, z]) of arm tip
+
         # Generate lever arms for cams that need motion amplification
         lever_count = 0
         for cam_idx, cam in enumerate(self.cams):
@@ -9370,6 +9392,54 @@ class AutomataGenerator:
                 pin_mesh.metadata['mechanism_type'] = mechanism
                 art_count += 1
 
+                # ── FIX-MECH-3: Transmission arm below the joint pivot ──
+                # The pushrod must push BELOW the pivot to create rotation torque.
+                # The arm extends BACKWARD past all fig parts so the pushrod 
+                # can reach it without going through the body.
+                _arm_r = 2.0    # arm radius
+                
+                # Find the rearmost Y of all fig parts (body, acc, legs...)
+                _rear_y = joint_pos[1]  # start from joint Y
+                for _fk, _fv in self.all_parts.items():
+                    if not _fk.startswith('fig_'): continue
+                    if 'xmit' in _fk or 'pin' in _fk or 'shelf' in _fk: continue
+                    _rear_y = min(_rear_y, _fv.bounds[0][1])
+                
+                # Arm tip: behind all fig parts, and below pivot
+                _arm_tip = np.array([joint_pos[0], _rear_y - 5.0, joint_pos[2] - 8.0])
+                
+                # Build arm as a chain of spheres + cylinder (robust, no rotation bugs)
+                _arm_pts = [joint_pos.copy(), _arm_tip.copy()]
+                _arm_segments = []
+                for _si in range(len(_arm_pts) - 1):
+                    _p1, _p2 = _arm_pts[_si], _arm_pts[_si + 1]
+                    _sv = _p2 - _p1
+                    _sl = max(np.linalg.norm(_sv), 0.5)
+                    _sd = _sv / _sl
+                    _seg = trimesh.creation.cylinder(radius=_arm_r, height=_sl, sections=12)
+                    # Align cylinder from Z to _sd
+                    _sz = np.array([0.0, 0.0, 1.0])
+                    _sc = np.cross(_sz, _sd)
+                    _scn = np.linalg.norm(_sc)
+                    if _scn > 1e-6:
+                        _sa = np.arccos(np.clip(np.dot(_sz, _sd), -1, 1))
+                        _srot = trimesh.transformations.rotation_matrix(_sa, _sc / _scn)
+                        _seg.apply_transform(_srot)
+                    elif np.dot(_sz, _sd) < 0:
+                        _seg.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
+                    _seg.apply_translation((_p1 + _p2) / 2)
+                    _arm_segments.append(_seg)
+                # Add sphere at tip for socket
+                _tip_sphere = trimesh.creation.icosphere(subdivisions=1, radius=_arm_r * 1.2)
+                _tip_sphere.apply_translation(_arm_tip)
+                _arm_segments.append(_tip_sphere)
+                _arm_mesh = trimesh.util.concatenate(_arm_segments)
+                _arm_mesh.metadata['part_type'] = 'transmission_arm'
+                _xarm_name = f'fig_xmit_arm_{jt.name}'
+                self.all_parts[_xarm_name] = _arm_mesh
+                # Store arm tip for pushrod targeting
+                self._xmit_arm_targets[jt.name] = _arm_tip.copy()
+
                 # ── Return mechanism detection ──
                 # For vertical pushrod motion (Z-axis), gravity provides return:
                 # pushrod pushes UP → gravity pulls mobile part back DOWN
@@ -9474,60 +9544,162 @@ class AutomataGenerator:
             fig_bottom = fig_mesh.bounds[0].copy()
             fig_centroid_xy = fig_mesh.centroid[:2]
             
-            # Pushrod: angled rod from lever output tip to figurine bottom center
-            # Start: lever tip (XY from lever, Z = lever top)
-            # End: figurine centroid XY at figurine bottom Z
+            # ── FIX-MECH-2: Smart pushrod routing ──
+            # Target: transmission arm tip (FIX-3) if exists, else fig bottom
+            # Route: check for collisions with fig_body/fig_acc, bypass if needed
             start_pt = np.array([lever_tip[0], lever_tip[1], lever_tip[2]])
-            end_pt = np.array([fig_centroid_xy[0], fig_centroid_xy[1], fig_bottom[2]])
-            rod_vec = end_pt - start_pt
-            rod_length = max(np.linalg.norm(rod_vec), 3.0)
-            rod_center = (start_pt + end_pt) / 2
             
-            # Create cylinder along Z, then rotate to align with rod_vec
-            pushrod = trimesh.creation.cylinder(
-                radius=PUSHROD_RADIUS, height=rod_length, sections=12)
-            # Rotation from Z-axis to rod_vec direction
-            rod_dir = rod_vec / np.linalg.norm(rod_vec)
-            z_axis = np.array([0, 0, 1.0])
-            cross = np.cross(z_axis, rod_dir)
-            cross_norm = np.linalg.norm(cross)
-            if cross_norm > 1e-6:
-                angle = np.arcsin(np.clip(cross_norm, -1, 1))
-                if np.dot(z_axis, rod_dir) < 0:
-                    angle = np.pi - angle
-                rot = trimesh.transformations.rotation_matrix(angle, cross / cross_norm)
-                pushrod.apply_transform(rot)
-            elif np.dot(z_axis, rod_dir) < 0:
-                pushrod.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
-            pushrod.apply_translation(rod_center)
+            # Find transmission arm target for this lever's joint
+            _cam_jname = cam_part_name  # e.g. "neck", "shoulder_right"
+            _arm_target = self._xmit_arm_targets.get(_cam_jname, None)
+            if _arm_target is not None:
+                end_pt = _arm_target.copy()
+            else:
+                # Fallback: fig bottom center (old behavior)
+                end_pt = np.array([fig_centroid_xy[0], fig_centroid_xy[1], fig_bottom[2]])
+            
+            # Check: does the straight line intersect any fig_body or fig_acc?
+            _pr_collides = False
+            _body_bounds = None
+            for _fn, _fm in self.all_parts.items():
+                if not (_fn.startswith('fig_body') or _fn.startswith('fig_acc')): continue
+                _b = _fm.bounds
+                # Check if pushrod line passes through the body bbox
+                _mid = (start_pt + end_pt) / 2
+                _half = np.abs(end_pt - start_pt) / 2 + PUSHROD_RADIUS + 1.0
+                _box_c = (_b[0] + _b[1]) / 2
+                _box_h = (_b[1] - _b[0]) / 2
+                if np.all(np.abs(_mid - _box_c) < _half + _box_h):
+                    _pr_collides = True
+                    _body_bounds = _b
+                    break
+            
+            def _make_rod_seg(p1, p2, radius):
+                """Create a cylinder from p1 to p2."""
+                vec = p2 - p1
+                length = max(np.linalg.norm(vec), 1.0)
+                rod = trimesh.creation.cylinder(radius=radius, height=length, sections=12)
+                d = vec / length
+                z = np.array([0, 0, 1.0])
+                c = np.cross(z, d)
+                cn = np.linalg.norm(c)
+                if cn > 1e-6:
+                    a = np.arccos(np.clip(np.dot(z, d), -1, 1))
+                    rod.apply_transform(trimesh.transformations.rotation_matrix(a, c / cn))
+                elif np.dot(z, d) < 0:
+                    rod.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0]))
+                rod.apply_translation((p1 + p2) / 2)
+                return rod
+            
+            if _pr_collides and _body_bounds is not None:
+                # Route AROUND body: find best bypass direction
+                # Check all fig parts to find the widest obstacle in X and Y
+                _max_xr = 0  # max right extent from center
+                _max_xl = 0  # max left extent
+                _min_y = 999  # min Y (back of all fig parts)
+                for _fn2, _fm2 in self.all_parts.items():
+                    if not _fn2.startswith('fig_'): continue
+                    if 'xmit' in _fn2 or 'pin' in _fn2 or 'shelf' in _fn2: continue
+                    _b2 = _fm2.bounds
+                    _max_xr = max(_max_xr, _b2[1][0])
+                    _max_xl = min(_max_xl, _b2[0][0])
+                    _min_y = min(_min_y, _b2[0][1])
+                
+                # Try Y bypass (go behind the body) — usually more room
+                _bypass_y = _min_y - 5.0  # 5mm behind the rearmost fig part
+                _wp_z = end_pt[2]  # same Z as target
+                _wp = np.array([end_pt[0], _bypass_y, _wp_z])
+                
+                # Verify this waypoint doesn't hit anything
+                _wp_ok = True
+                for _fn3, _fm3 in self.all_parts.items():
+                    if not _fn3.startswith('fig_'): continue
+                    if 'xmit' in _fn3 or 'pin' in _fn3 or 'shelf' in _fn3: continue
+                    _b3 = _fm3.bounds
+                    if (_b3[0][1] - 2 < _bypass_y < _b3[1][1] + 2 and
+                        _b3[0][2] - 2 < _wp_z < _b3[1][2] + 2):
+                        _wp_ok = False
+                        break
+                
+                if not _wp_ok:
+                    # Fall back to X bypass with wider offset
+                    _bypass_x = _max_xr + 5.0
+                    _wp = np.array([_bypass_x, start_pt[1], _wp_z])
+                
+                seg1 = _make_rod_seg(start_pt, _wp, PUSHROD_RADIUS)
+                seg2 = _make_rod_seg(_wp, end_pt, PUSHROD_RADIUS)
+                elbow = trimesh.creation.icosphere(subdivisions=1, radius=PUSHROD_RADIUS * 1.5)
+                elbow.apply_translation(_wp)
+                pushrod = trimesh.util.concatenate([seg1, seg2, elbow])
+            else:
+                # No collision: straight pushrod
+                pushrod = _make_rod_seg(start_pt, end_pt, PUSHROD_RADIUS)
+            
             pushrod.metadata['part_type'] = 'pushrod'
-            pushrod.metadata['connects'] = f"{lever_name} → {best_name}"
-            self.all_parts[f"pushrod_{lever_name.replace('lever_','')}"] = pushrod
+            pushrod.metadata['connects'] = f"{lever_name} -> {best_name}"
+            _pr_name = f"pushrod_{lever_name.replace('lever_','')}"
+            self.all_parts[_pr_name] = pushrod
             pushrod_count += 1
             
-            # Socket in figurine: subtract vertical Ø3.3mm hole at fig bottom center
-            # Socket is always vertical (Z-axis) for clean FDM printing and reliable fit.
-            # The pushrod enters from below; a vertical hole is easier to print than angled.
-            socket_depth = min(SOCKET_DEPTH, fig_mesh.extents[2] * 0.5)  # max 50% of fig height
-            socket_center_z = fig_bottom[2] + socket_depth / 2
-            socket = trimesh.creation.cylinder(
-                radius=SOCKET_RADIUS, height=socket_depth + 0.5, sections=16)
-            socket.apply_translation([fig_centroid_xy[0], fig_centroid_xy[1], socket_center_z])
+            # Store pushrod XY for shelf hole
+            _pr_xy = end_pt[:2] if _arm_target is not None else fig_centroid_xy
             
-            try:
-                fig_with_socket = fig_mesh.difference(socket)
-                if fig_with_socket is not None and fig_with_socket.is_volume and fig_with_socket.volume > 5:
-                    self.all_parts[best_name] = fig_with_socket
-            except Exception:
-                pass  # boolean may fail — socket stays as metadata only
-        
+            # Socket: no longer needed on fig_body — pushrod connects to xmit_arm
+            # (arm already has a socket from FIX-MECH-3)
+            
+            # Fallback socket if no transmission arm
+            if _arm_target is None:
+                socket_depth = min(SOCKET_DEPTH, fig_mesh.extents[2] * 0.5)
+                socket_center_z = fig_bottom[2] + socket_depth / 2
+                socket = trimesh.creation.cylinder(
+                    radius=SOCKET_RADIUS, height=socket_depth + 0.5, sections=16)
+                socket.apply_translation([fig_centroid_xy[0], fig_centroid_xy[1], socket_center_z])
+                try:
+                    fig_ws = fig_mesh.difference(socket)
+                    if fig_ws is not None and fig_ws.is_volume and fig_ws.volume > 5:
+                        self.all_parts[best_name] = fig_ws
+                except Exception:
+                    pass
+            
         if pushrod_count > 0:
-            print(f"  · Pushrods: {pushrod_count} tiges de liaison levier→figurine")
-
-        # ── Step 5a-ter: Punch pushrod holes through figurine body ──
-        # Pushrods go straight through fig_body and fig_acc_* parts.
-        # Fix: subtract a clearance cylinder from each intersecting fig part.
-        PUSHROD_HOLE_CLEARANCE = 0.5  # mm extra radius around pushrod
+            print(f"  · Pushrods: {pushrod_count} tiges de liaison levier->figurine")
+        
+        # ── FIX-MECH-4: Guide tubes on shelf + punch holes ──
+        _guide_count = 0
+        _shelf_mesh = self.all_parts.get('fig_shelf')
+        for pname, pmesh in list(self.all_parts.items()):
+            if not pname.startswith('pushrod_'): continue
+            _pr_cxy = pmesh.centroid[:2]
+            _gi_r = PUSHROD_RADIUS + 0.25
+            _go_r = _gi_r + 1.5
+            _gh = 12.0
+            if _shelf_mesh is not None:
+                _st_z = _shelf_mesh.bounds[1][2]
+                _go = trimesh.creation.cylinder(radius=_go_r, height=_gh, sections=24)
+                _gi = trimesh.creation.cylinder(radius=_gi_r, height=_gh + 2, sections=24)
+                _go.apply_translation([_pr_cxy[0], _pr_cxy[1], _st_z + _gh / 2])
+                _gi.apply_translation([_pr_cxy[0], _pr_cxy[1], _st_z + _gh / 2])
+                try:
+                    _guide = _go.difference(_gi, engine='manifold')
+                    if _guide is not None and _guide.is_volume:
+                        self.all_parts[f'pushrod_guide_{pname.replace("pushrod_","")}'] = _guide
+                        _guide_count += 1
+                except Exception:
+                    pass
+                # Punch hole through shelf
+                _sh = trimesh.creation.cylinder(radius=_gi_r + 0.5, height=10, sections=24)
+                _sh.apply_translation([_pr_cxy[0], _pr_cxy[1], _shelf_mesh.centroid[2]])
+                try:
+                    _sn = _shelf_mesh.difference(_sh, engine='manifold')
+                    if _sn is not None and _sn.is_volume and _sn.volume > _shelf_mesh.volume * 0.3:
+                        _shelf_mesh = _sn
+                        self.all_parts['fig_shelf'] = _shelf_mesh
+                except Exception:
+                    pass
+        if _guide_count > 0:
+            print(f"  · Guides: {_guide_count} tubes de guidage pushrod")
+        
+        PUSHROD_HOLE_CLEARANCE = 1.0  # mm extra radius around pushrod (generous for FDM tolerance)
         punch_count = 0
         for pname, pmesh in list(self.all_parts.items()):
             if not pname.startswith('pushrod_'):
@@ -9547,6 +9719,8 @@ class AutomataGenerator:
                     continue
                 if 'pin_' in fname:
                     continue  # Don't punch through pins
+                if 'xmit' in fname or 'shelf' in fname or 'guide' in fname:
+                    continue  # Don't punch through transmission arm, shelf, or guide
                 if fname == pname.replace('pushrod_', 'fig_'):
                     continue  # Don't punch the target part
                 fmesh = self.all_parts[fname]
