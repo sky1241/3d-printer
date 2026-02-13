@@ -2,7 +2,7 @@
 
 > Dernière mise à jour: 13 février 2026 — post-fix CAM_ROLLER + P0 crash
 > Audit complet sur 17 builders × 118 espèces
-> Commit: 7418f59
+> Commit: f946ed2
 
 ---
 
@@ -89,7 +89,7 @@ Espèces supportées:  118
 Z-axis alignment:    17/17  ✅ (toutes espèces)
 Through-bores:       17/17  ✅ (euler=0)
 CAM_ROLLER warnings: 0      ✅
-Espèces 100% clean:  2/17   (sunflower, snake)
+Espèces 100% clean:  7/17   (sunflower, snake, butterfly, eagle, human, centipede, chat)
 ```
 
 ## 📝 HISTORIQUE COMMITS (sessions 13 fév)
