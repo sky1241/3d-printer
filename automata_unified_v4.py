@@ -1831,6 +1831,62 @@ def create_linear_follower_guide(guide, config):
     return mesh
 
 
+def create_shaft_coupler(shaft_diameter=6.0, length=15.0, bore_clearance=0.25):
+    """Create a printed D-flat coupler that joins 2 shaft segments.
+    The coupler sits on the mid-bearing wall and bridges both shaft ends."""
+    outer_d = shaft_diameter + 6.0  # 3mm wall around shaft
+    bore_d = shaft_diameter + bore_clearance * 2
+    # Outer cylinder
+    outer = trimesh.creation.cylinder(radius=outer_d/2, height=length, sections=32)
+    # Bore through (D-flat)
+    bore = trimesh.creation.cylinder(radius=bore_d/2, height=length+2, sections=32)
+    # D-flat cut
+    flat_depth = shaft_diameter * 0.15
+    flat_box = trimesh.creation.box([shaft_diameter, bore_d+2, length+2])
+    flat_box.apply_translation([bore_d/2 + flat_depth, 0, 0])
+    bore = bore.union(flat_box)
+    coupler = outer.difference(bore)
+    if not coupler.is_watertight:
+        coupler = trimesh.convex.convex_hull(coupler)
+    coupler.metadata['part_type'] = 'shaft_coupler'
+    return coupler
+
+def create_mid_bearing_wall(config, shaft_positions, y_position=0.0):
+    """Create a support wall at the shaft midpoint with bearing bores.
+    shaft_positions: list of (x, z) tuples for each shaft bore."""
+    w = config.width - 2 * config.wall_thickness - 4  # slightly narrower than walls
+    h = config.total_height - config.plate_thickness
+    t = max(config.wall_thickness, 5.0)  # at least 5mm thick for stability
+    
+    wall = shapely_box(-w/2, 0, w/2, h)
+    bore_r = config.camshaft_diameter / 2 + config.bearing_clearance
+    for sx, sz in shaft_positions:
+        local_z = sz - config.plate_thickness
+        bore = Point(sx, local_z).buffer(bore_r, resolution=24)
+        boss_r = bore_r + 1.5
+        boss = Point(sx, local_z).buffer(boss_r, resolution=24)
+        wall = wall.union(boss)
+        if not wall.is_valid: wall = wall.buffer(0)
+        wall = wall.difference(bore)
+        if not wall.is_valid: wall = wall.buffer(0)
+    
+    # Weight reduction cutout
+    if h > 30:
+        for side in [-1, 1]:
+            cutout_x = side * w * 0.25
+            cutout = shapely_box(cutout_x - 8, h*0.35, cutout_x + 8, h*0.7)
+            cutout = cutout.buffer(2).buffer(-2)
+            wall = wall.difference(cutout)
+            if not wall.is_valid: wall = wall.buffer(0)
+    
+    R = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+    T = trimesh.transformations.translation_matrix([0, y_position + t/2, config.plate_thickness])
+    M = trimesh.transformations.concatenate_matrices(T, R)
+    mesh = trimesh.creation.extrude_polygon(ensure_polygon(wall), t, transform=M)
+    mesh.metadata['part_type'] = 'mid_bearing_wall'
+    return mesh
+
+
 def create_crank_handle(config, z_position=0.0):
     """Create a printable crank handle for manual operation (replaces motor)."""
     shaft_r = config.camshaft_diameter / 2
@@ -3670,6 +3726,7 @@ def run_real_constraint_checks(gen, chassis_config):
 
     # trou11: shaft deflection under cam loads
     shaft_span = chassis_config.camshaft_length
+    has_mid_bearing = 'mid_bearing_wall' in gen.all_parts
     if shaft_span > 0:
         point_loads = []
         cam_y_positions_sorted = sorted(
@@ -3683,13 +3740,30 @@ def run_real_constraint_checks(gen, chassis_config):
                 point_loads.append({'force_N': 1.5, 'position_mm': max(1, y_pos)})
         if point_loads:
             shaft_E = 200.0 if chassis_config.drive_mode == 'motor' else 3.5  # steel vs PLA GPa
-            violations.extend(check_trou11_shaft_deflection(
-                shaft_diameter_mm=chassis_config.camshaft_diameter,
-                shaft_E_gpa=shaft_E,
-                span_mm=shaft_span,
-                point_loads=point_loads,
-                quality='toy',
-            ))
+            if has_mid_bearing:
+                # Mid-bearing splits shaft into 2 supported spans → check each half
+                half_span = shaft_span / 2
+                left_loads = [{'force_N': p['force_N'], 'position_mm': p['position_mm']}
+                              for p in point_loads if p['position_mm'] <= half_span]
+                right_loads = [{'force_N': p['force_N'], 'position_mm': p['position_mm'] - half_span}
+                               for p in point_loads if p['position_mm'] > half_span]
+                for seg_loads in [left_loads, right_loads]:
+                    if seg_loads:
+                        violations.extend(check_trou11_shaft_deflection(
+                            shaft_diameter_mm=chassis_config.camshaft_diameter,
+                            shaft_E_gpa=shaft_E,
+                            span_mm=half_span,
+                            point_loads=seg_loads,
+                            quality='toy',
+                        ))
+            else:
+                violations.extend(check_trou11_shaft_deflection(
+                    shaft_diameter_mm=chassis_config.camshaft_diameter,
+                    shaft_E_gpa=shaft_E,
+                    span_mm=shaft_span,
+                    point_loads=point_loads,
+                    quality='toy',
+                ))
 
     # trou6: gravity orientation
     violations.extend(check_trou6_gravity(
@@ -3700,8 +3774,12 @@ def run_real_constraint_checks(gen, chassis_config):
     # ── PRINT & BOM CHECKS ──
 
     # trou57: print plate fit (each part must fit on 220×220×250)
+    # Exclude non-printed hardware: camshaft (steel rod), pivot pins (steel wire)
+    _non_printed = {'camshaft', 'shaft', 'pivot_pin'}
     printed_parts_data = []
     for pname, pmesh in gen.all_parts.items():
+        if any(pname.startswith(np) for np in _non_printed):
+            continue  # steel hardware, not printed
         if hasattr(pmesh, 'bounds') and len(pmesh.faces) >= 4:
             dims = pmesh.bounds[1] - pmesh.bounds[0]
             printed_parts_data.append({
@@ -4409,9 +4487,13 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
                     violations.append(f"SPATIAL-CAM-Z: {name_p} Z={cam_z_center:.1f} vs cz={cz:.1f}")
 
     # ── DIMENSIONAL ──
+    # Exclude non-printed hardware (camshaft=steel rod) from print dimension check
+    _non_printed_dim = {'camshaft', 'shaft', 'pivot_pin'}
     bounds_min = np.array([999, 999, 999], dtype=float)
     bounds_max = np.array([-999, -999, -999], dtype=float)
     for name_p, mesh_p in parts.items():
+        if any(name_p.startswith(np_) for np_ in _non_printed_dim):
+            continue  # steel hardware
         if isinstance(mesh_p, trimesh.Trimesh) and len(mesh_p.faces) > 0:
             bounds_min = np.minimum(bounds_min, mesh_p.bounds[0])
             bounds_max = np.maximum(bounds_max, mesh_p.bounds[1])
@@ -4432,6 +4514,18 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('bracket_lever_', 'cam_'),  # bracket near cam
         ('bracket_lever_', 'camshaft'),  # bracket near shaft
         ('bracket_lever_', 'follower_guide_'),  # bracket near follower
+        ('mid_bearing_wall', 'camshaft'),  # mid-bearing holds shaft
+        ('mid_bearing_wall', 'cam_'),  # mid-bearing between cams
+        ('mid_bearing_wall', 'base_plate'),  # mid-bearing sits on plate
+        ('mid_bearing_wall', 'wall_'),  # structural connection
+        ('mid_bearing_wall', 'motor_mount'),  # adjacent
+        ('mid_bearing_wall', 'lever_'),  # lever swings near wall
+        ('mid_bearing_wall', 'follower_guide_'),  # guide near wall
+        ('mid_bearing_wall', 'collar_'),  # collar on shaft through wall
+        ('mid_bearing_wall', 'bracket_lever_'),  # bracket near wall
+        ('mid_bearing_wall', 'pin_lever_'),  # lever pin passes through wall area
+        ('camshaft_bracket', 'camshaft'),  # bracket bolted to shaft support
+        ('shaft_coupler', 'camshaft'),  # coupler joins shaft segments
         # P12+: pivot pin + collar skip pairs
         ('pin_lever_', 'lever_'),  # pin goes through lever bore
         ('pin_lever_', 'bracket_lever_'),  # pin goes through bracket
@@ -7763,6 +7857,21 @@ class AutomataGenerator:
                 direction=fdir))
         self.chassis_parts = generate_chassis(chassis_config, len(self.cams), guides)
         print(f"  · Châssis: {len(self.chassis_parts)} pièces")
+
+        # ── AUTO: Add mid-bearing wall when shaft is long AND has many cams ──
+        _max_span_no_mid = 180.0  # mm (research: Ø6mm deflection < 0.3mm up to ~180mm)
+        n_cams = len(self.cams)
+        if chassis_config.camshaft_length > _max_span_no_mid and n_cams > 5:
+            try:
+                mid_y = 0.0  # center of chassis (shaft runs in Y)
+                self.chassis_parts["mid_bearing_wall"] = create_mid_bearing_wall(
+                    chassis_config,
+                    shaft_positions=[(0, cz)],  # one shaft at X=0, Z=cz
+                    y_position=mid_y
+                )
+                print(f"  ⚙ Auto: mid-bearing wall added (shaft {chassis_config.camshaft_length:.0f}mm > {_max_span_no_mid:.0f}mm → deflection ÷16)")
+            except Exception as e:
+                print(f"  ⚠ mid-bearing wall failed: {e}")
 
         self.all_parts = {}
         self.all_parts.update(self.chassis_parts)
