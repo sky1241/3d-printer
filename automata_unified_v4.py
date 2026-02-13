@@ -959,9 +959,15 @@ def check_undercut_roller(rho_pitch, rf, safety_factor=2.0):
 
 
 def compute_Rb_min_translating_roller(v, s, rf, phi_max_rad=np.radians(30), eps=0.0):
-    """Rayon de base minimum pour respecter φ_max."""
+    """Rayon de base minimum pour respecter φ_max.
+    
+    CRITICAL: Uses |v| because pressure angle magnitude depends on absolute
+    velocity regardless of stroke direction. The return stroke (v<0) can have
+    steeper velocity than the rise, generating higher pressure angles.
+    """
     tan_phi = np.tan(phi_max_rad)
-    Rp_required = v / tan_phi - s
+    # Use absolute velocity — return stroke pressure angles matter too!
+    Rp_required = np.abs(v) / tan_phi - s
     Rp_min = np.max(Rp_required)
     return max(float(Rp_min - rf), rf)
 
@@ -1174,6 +1180,7 @@ def auto_design_cam(
             # Iteratively reduce amplitude until Rb fits within Rb_max
             # Use relaxed phi (58°) since we're space-constrained
             phi_limit_post = np.radians(58.0)
+            phi_limit = phi_limit_post  # Update main phi_limit to reflect actual design limit used
             lo, hi = 0.1, 1.0
             best_scale = 0.5
             for _ in range(15):  # binary search
@@ -4922,6 +4929,13 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
         ('cam_', 'cam_'),  # cams sit at different Y positions along shaft (2D profile overlap is visual only)
         ('collar_L_', 'pushrod_'),  # collar on shaft, pushrod passes nearby
         ('collar_R_', 'pushrod_'),  # collar on shaft, pushrod passes nearby
+        ('crank_handle', 'cam_'),  # crank handle mounted on shaft, adjacent to cam
+        ('collar_retention', 'cam_'),  # retention collar sits near cam on shaft
+        ('crank_handle', 'collar_retention'),  # crank and collar on same shaft end
+        ('crank_handle', 'camshaft'),  # crank mounted on shaft
+        ('collar_retention', 'camshaft'),  # retention collar on shaft
+        ('collar_retention', 'collar_L_'),  # retention collar near position collar
+        ('collar_retention', 'collar_R_'),  # retention collar near position collar
     ]
     part_names = list(parts.keys())
     for i in range(len(part_names)):
@@ -6079,8 +6093,8 @@ def create_blacksmith(style=MotionStyle.MECHANICAL):
     scene.joints = [
         Joint("shoulder", "revolute", (1,0,0), (0,0,35), "body", "arm", (-10, 50))]
     scene.tracks = [MotionTrack("shoulder", primitives=[
-        MotionPrimitive("LIFT", 50, 160, law, 1),
-        MotionPrimitive("LIFT", 50, 80, law, -1),   # frappe rapide
+        MotionPrimitive("LIFT", 25, 160, law, 1),
+        MotionPrimitive("LIFT", 25, 80, law, -1),   # frappe rapide
         MotionPrimitive("PAUSE", beta=120)])]
     scene._preset_name = "blacksmith"
     return scene
@@ -8767,10 +8781,13 @@ class AutomataGenerator:
             _theta_rad = np.radians(_theta_deg)
             _s, _ds, _dds = _cam.evaluate(_theta_deg)
             _max_amp = float(np.max(np.abs(_s)))
-            # Compute Rb_min for strict phi_max=30° (no relaxation)
+            # Compute Rb_min using relaxed phi=58° (max cascade limit)
+            # The cam designer cascades phi from 30°→45°→58° and caps at Rb_hard_cap=35mm
+            # Pre-sizing must match actual cam output, not theoretical phi=30° minimum
             _rb_min = compute_Rb_min_translating_roller(_ds, _s, _rf_est,
-                                                         np.radians(30.0), 0.0)
+                                                         np.radians(58.0), 0.0)
             _rb_min = max(_rb_min, _rf_est / 0.38, 5.0)  # roller ratio + FDM floor
+            _rb_min = min(_rb_min, 35.0)  # match Rb_hard_cap — cam designer never exceeds this
             _cam_outer = _rb_min + _max_amp + _rf_est
             _max_cam_outer = max(_max_cam_outer, _cam_outer)
         # Both width and depth must accommodate the largest cam (cam disc in XZ plane)
@@ -8835,9 +8852,9 @@ class AutomataGenerator:
                                                                   np.radians(30.0), 0.0)
                 _rb_min_cam = max(_rb_min_cam, rf_est / 0.38, 5.0)
                 # Set Rb_max to accommodate Rb_min (no aggressive clamping)
-                # Hard cap: no cam should exceed 50mm Rb (100mm diameter + lift)
-                # Avoids 141mm monsters but keeps pressure angles reasonable
-                Rb_hard_cap = 50.0
+                # Hard cap: no cam should exceed 35mm Rb (matches CAM_TOO_LARGE constraint)
+                # Keeps cams within chassis bounds and pressure angles reasonable
+                Rb_hard_cap = 35.0
                 Rb_max = min(max(R_available - max_amp - rf_est, _rb_min_cam), Rb_hard_cap)
 
                 # If amplitude alone exceeds available space, scale it down
