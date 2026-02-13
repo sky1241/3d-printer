@@ -4725,7 +4725,15 @@ PART_ROLE_RULES = [
     ("fig_neck",  "fig_limb",      5),
     ("fig_wing",  "fig_wing",      5),
     ("fig_tail",  "fig_wing",      5),
+    ("fig_pin_",  "fig_pin",       6),   # articulation pin joints
+    ("fig_acc_",  "fig_accessory", 6),   # figurine accessories (carapace etc)
     ("fig_",      "fig_body",      1),   # catch-all figurine
+    ("collar_",   "collar",        8),   # cam collars
+    ("crank_",    "crank",         8),   # crank handle
+    ("lever_",    "lever",         8),   # lever arms
+    ("pin_lever", "lever_pin",     9),   # lever pivot pins
+    ("pushrod_",  "pushrod",       8),   # pushrod linkages
+    ("mid_bearing","chassis_wall",10),   # mid-shaft bearing wall
 ]
 
 def classify_part_role(name: str) -> str:
@@ -4881,6 +4889,48 @@ ROLE_SETTINGS = {
         "speed_outer_wall": 100,
         "support": True, "brim": True, "batch": "figurine",
         "notes": "Pièce fine et large — brim + tree supports.",
+    },
+    "fig_pin": {
+        "layer_height": 0.12, "wall_loops": 4, "infill_pct": 100,
+        "infill_pattern": "concentric",
+        "speed_outer_wall": 60, "batch": "mechanism",
+        "notes": "Axe d'articulation — 100% remplissage pour résistance au cisaillement.",
+    },
+    "fig_accessory": {
+        "layer_height": 0.16, "wall_loops": 3, "infill_pct": 15,
+        "infill_pattern": "grid",
+        "speed_outer_wall": 80, "batch": "figurine",
+        "notes": "Accessoire décoratif (carapace, crinière, etc.).",
+    },
+    "collar": {
+        "layer_height": 0.16, "wall_loops": 3, "infill_pct": 80,
+        "infill_pattern": "concentric",
+        "speed_outer_wall": 80, "batch": "mechanism",
+        "notes": "Bague de retenue — haute densité pour grip sur l'arbre.",
+    },
+    "crank": {
+        "layer_height": 0.20, "wall_loops": 4, "infill_pct": 60,
+        "infill_pattern": "grid",
+        "speed_outer_wall": 80, "batch": "mechanism",
+        "notes": "Manivelle — résistance mécanique au couple de rotation.",
+    },
+    "lever": {
+        "layer_height": 0.16, "wall_loops": 3, "infill_pct": 50,
+        "infill_pattern": "grid",
+        "speed_outer_wall": 80, "batch": "mechanism",
+        "notes": "Bras de levier — équilibre rigidité/poids.",
+    },
+    "lever_pin": {
+        "layer_height": 0.12, "wall_loops": 4, "infill_pct": 100,
+        "infill_pattern": "concentric",
+        "speed_outer_wall": 60, "batch": "mechanism",
+        "notes": "Axe de pivot levier — 100% remplissage.",
+    },
+    "pushrod": {
+        "layer_height": 0.16, "wall_loops": 3, "infill_pct": 80,
+        "infill_pattern": "concentric",
+        "speed_outer_wall": 80, "batch": "mechanism",
+        "notes": "Tige de liaison — résistance au flambage en compression.",
     },
     "unknown": {
         "layer_height": 0.20, "wall_loops": 3, "infill_pct": 20,
