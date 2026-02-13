@@ -159,13 +159,10 @@ def test_A3_lever_pivot_bore():
     return errors
 
 def test_A4_snap_hook_geometry():
-    """A4: Follower guides with snap_hook metadata must have actual snap geometry.
+    """A4: Follower guides must have pushrod_guide metadata (snap system replaced).
     
-    Research says: cantilever base ≥1mm, fillet 0.5×thickness, XY orientation.
-    Problem: 16 vertices = plain box, no snap features.
-    Fix: call make_snap_hook_3d() or use dowel/friction-fit alternative.
-    
-    PASS criteria: follower_guide parts with snap_hook metadata have > 24 vertices.
+    The snap-hook system was replaced by pushrod+lever transmission.
+    PASS criteria: follower_guide parts have 'pushrod_guide' joint_type (not 'snap_hook').
     """
     errors = []
     all_parts = get_all_parts()
@@ -174,18 +171,15 @@ def test_A4_snap_hook_geometry():
             mesh = parts[fg]
             meta = mesh.metadata if hasattr(mesh, 'metadata') else {}
             jt = meta.get('joint_type', '')
-            if jt == 'snap_hook' and mesh.vertices.shape[0] <= 24:
-                errors.append(f"{pname}/{fg}: snap_hook metadata but only {mesh.vertices.shape[0]} verts (box)")
+            if jt == 'snap_hook':
+                errors.append(f"{pname}/{fg}: still has obsolete snap_hook metadata (should be pushrod_guide)")
     return errors
 
 def test_A5_fig_snap_pocket():
-    """A5: Figurine parts with snap_pocket metadata must have actual pocket geometry.
+    """A5: Figurine parts must have pushrod_socket metadata (snap system replaced).
     
-    Research says: pocket = boolean cavity in figurine base. Or use dowel hole.
-    Problem: fig_* parts have snap_pocket metadata but no cavity.
-    Fix: call make_snap_pocket_3d() or cut a dowel hole.
-    
-    PASS criteria: fig parts with snap_pocket have a cavity (euler < 2) or a dowel hole.
+    The snap-pocket system was replaced by pushrod+socket transmission.
+    PASS criteria: fig parts have 'pushrod_socket' joint_type (not 'snap_pocket').
     """
     errors = []
     all_parts = get_all_parts()
@@ -195,10 +189,8 @@ def test_A5_fig_snap_pocket():
             mesh = parts[fp]
             meta = mesh.metadata if hasattr(mesh, 'metadata') else {}
             jt = meta.get('joint_type', '')
-            if jt == 'snap_pocket' and mesh.euler_number >= 2:
-                # Check if it has a mating feature (more verts than expected)
-                # For now just flag it
-                errors.append(f"{pname}/{fp}: snap_pocket metadata, euler={mesh.euler_number} (no cavity)")
+            if jt == 'snap_pocket':
+                errors.append(f"{pname}/{fp}: still has obsolete snap_pocket metadata (should be pushrod_socket)")
     return errors
 
 def test_A9_bracket_bore():
@@ -220,24 +212,19 @@ def test_A9_bracket_bore():
     return errors
 
 def test_B2_snap_functions_called():
-    """B2: make_snap_hook_3d/make_snap_pocket_3d must be called during generation.
+    """B2: Pushrod system must be active (snap system is legacy dead code).
     
-    Problem: functions exist but are dead code (0 calls for hook).
-    Fix: wire them into the generation pipeline.
-    
-    PASS criteria: code contains actual invocations of these functions in generate flow.
+    The snap_hook/snap_pocket system was replaced by pushrod+lever.
+    make_snap_hook_3d is now expected dead code.
+    PASS criteria: pushrod parts exist in generated output for presets with levers.
     """
     errors = []
-    import re
-    with open('automata_unified_v4.py') as f:
-        code = f.read()
-    
-    hook_def = len(re.findall(r'def make_snap_hook_3d', code))
-    hook_call = len(re.findall(r'make_snap_hook_3d\s*\(', code)) - hook_def
-    
-    if hook_def > 0 and hook_call <= 0:
-        errors.append(f"make_snap_hook_3d: defined {hook_def}x but called {hook_call}x (dead code)")
-    
+    all_parts = get_all_parts()
+    for pname, parts in all_parts.items():
+        levers = [p for p in parts if p.startswith('lever_')]
+        pushrods = [p for p in parts if p.startswith('pushrod_')]
+        if levers and not pushrods:
+            errors.append(f"{pname}: has {len(levers)} levers but no pushrods (transmission broken)")
     return errors
 
 def test_C2_pdf_coherence():
@@ -290,9 +277,9 @@ def test_REGRESSION_no_crash():
 def test_REGRESSION_part_count():
     """REGRESSION: Part counts must not decrease."""
     BASELINE_PARTS = {
-        'nodding_bird': 22, 'walking_figure': 44, 'drummer': 31,
-        'swimming_fish': 23, 'waving_cat': 23, 'flapping_bird': 32,
-        'blacksmith': 22, 'bobbing_duck': 21, 'rocking_horse': 22,
+        'nodding_bird': 23, 'walking_figure': 48, 'drummer': 33,
+        'swimming_fish': 24, 'waving_cat': 24, 'flapping_bird': 40,
+        'blacksmith': 23, 'bobbing_duck': 22, 'rocking_horse': 34,
     }
     errors = []
     all_parts = get_all_parts()
@@ -314,9 +301,9 @@ TESTS = {
     # Phase 2 — FONCTIONNEL
     'A2':       ('🔴 Cam→Lever gap ≤ 2mm', test_A2_cam_lever_gap),
     # Phase 3 — ATTACHÉ  
-    'A4':       ('🟠 Snap-hook geometry', test_A4_snap_hook_geometry),
-    'A5':       ('🟠 Figurine snap-pocket', test_A5_fig_snap_pocket),
-    'B2':       ('🟠 Snap functions called', test_B2_snap_functions_called),
+    'A4':       ('🟠 Pushrod guide metadata', test_A4_snap_hook_geometry),
+    'A5':       ('🟠 Pushrod socket metadata', test_A5_fig_snap_pocket),
+    'B2':       ('🟠 Pushrod system active', test_B2_snap_functions_called),
     # Coherence
     'C2':       ('🟡 PDF coherence', test_C2_pdf_coherence),
     # Regressions (must ALWAYS pass)

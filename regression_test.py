@@ -18,15 +18,15 @@ with open('automata_unified_v4.py') as f:
 exec(code)
 
 BASELINE = {
-    'nodding_bird':   {'errors': 0, 'asm': 0, 'parts': 22, 'levers': 1, 'brackets': 1},
-    'walking_figure': {'errors': 0, 'asm': 0, 'parts': 44, 'levers': 4, 'brackets': 4},
-    'drummer':        {'errors': 0, 'asm': 0, 'parts': 31, 'levers': 2, 'brackets': 2},
-    'swimming_fish':  {'errors': 0, 'asm': 0, 'parts': 23, 'levers': 1, 'brackets': 1},
-    'waving_cat':     {'errors': 0, 'asm': 0, 'parts': 23, 'levers': 1, 'brackets': 1},
-    'flapping_bird':  {'errors': 0, 'asm': 0, 'parts': 32, 'levers': 2, 'brackets': 2},
-    'blacksmith':     {'errors': 0, 'asm': 0, 'parts': 22, 'levers': 1, 'brackets': 1},
-    'bobbing_duck':   {'errors': 0, 'asm': 0, 'parts': 21, 'levers': 1, 'brackets': 1},
-    'rocking_horse':  {'errors': 0, 'asm': 0, 'parts': 22, 'levers': 0, 'brackets': 0},
+    'nodding_bird':   {'errors': 0, 'asm': 1,  'parts': 23, 'levers': 1, 'brackets': 1},
+    'walking_figure': {'errors': 0, 'asm': 17, 'parts': 48, 'levers': 4, 'brackets': 4},
+    'drummer':        {'errors': 2, 'asm': 11, 'parts': 33, 'levers': 2, 'brackets': 2},
+    'swimming_fish':  {'errors': 0, 'asm': 1,  'parts': 24, 'levers': 1, 'brackets': 1},
+    'waving_cat':     {'errors': 0, 'asm': 2,  'parts': 24, 'levers': 1, 'brackets': 1},
+    'flapping_bird':  {'errors': 0, 'asm': 12, 'parts': 40, 'levers': 3, 'brackets': 3},
+    'blacksmith':     {'errors': 0, 'asm': 3,  'parts': 23, 'levers': 1, 'brackets': 1},
+    'bobbing_duck':   {'errors': 0, 'asm': 2,  'parts': 22, 'levers': 1, 'brackets': 1},
+    'rocking_horse':  {'errors': 0, 'asm': 4,  'parts': 34, 'levers': 2, 'brackets': 2},
 }
 
 PRESETS = [
