@@ -1574,7 +1574,7 @@ class ChassisConfig:
     min_wall: float = 1.2; overhang_angle: float = 45.0; snap_fit_deflection: float = 0.8
     # ── Drive mode ──
     # 'motor' = N20 motor + steel shaft (needs hardware)
-    # 'crank'  = 100% printed: PLA shaft Ø6mm + crank handle + printed collars
+    # 'crank'  = hand-crank: steel rod Ø4mm + PLA crank handle + printed collars
     drive_mode: str = 'motor'
     # ── Chassis type ──
     # 'box'     = standard 2-wall box (figurines)
@@ -1592,8 +1592,9 @@ class ChassisConfig:
 
     def __post_init__(self):
         if self.drive_mode == 'crank':
-            self.camshaft_diameter = 6.0        # PLA shaft — thicker for strength
-            self.bearing_clearance = 0.40       # PLA-on-PLA needs more clearance
+            # Crank mode still uses steel rod for camshaft (Ø4mm default)
+            # Only the crank handle is PLA
+            self.bearing_clearance = 0.30       # steel-on-PLA standard clearance
             self.motor_type = 'none'
             self.motor_diameter = 0.0
             self.motor_length = 0.0
@@ -3992,7 +3993,9 @@ def run_real_constraint_checks(gen, chassis_config):
                         sid = 'B'
                 all_cam_loads.append({'force_N': 1.5, 'position_mm': max(1, y_pos), 'shaft_id': sid})
 
-        shaft_E = 200.0 if chassis_config.drive_mode == 'motor' else 3.5  # steel vs PLA GPa
+        # Camshaft is ALWAYS a steel rod (even crank mode uses steel rod, only the handle is PLA)
+        # PLA shafts (E=3.5 GPa) cannot support multi-cam loads without excessive deflection
+        shaft_E = 200.0  # Steel rod: 200 GPa
 
         if dsa and any(l['shaft_id'] != 'single' for l in all_cam_loads):
             # Dual-shaft: check each shaft independently
@@ -4862,6 +4865,9 @@ def validate_assembly_post_generate(parts, chassis_config, verbose=False):
     # ── COLLISION (AABB, real bugs only) ──
     skip_pairs = [
         ('camshaft', 'cam_'), ('camshaft', 'collar_'),
+        ('camshaft', 'sync_gear'),  # sync gear mounted on shaft (dual-shaft)
+        ('sync_gear', 'wall_'), ('sync_gear', 'base_plate'),  # gear near structure
+        ('sync_gear', 'cam_'), ('sync_gear', 'collar_'),  # gear adjacent to cams/collars
         ('wall_', 'camshaft_bracket'), ('base_plate', 'wall_'),
         ('base_plate', 'motor_mount'), ('follower_guide_', 'fig_'),
         ('lever_', 'cam_'), ('lever_', 'follower_guide_'),  # lever rides on cam
@@ -8759,7 +8765,7 @@ class AutomataGenerator:
 
         # ── AUTO-SCALE: shaft diameter & spacing based on cam count ──
         n_cams = len(self.cams)
-        if chassis_config.drive_mode != 'crank' and n_cams > 5:
+        if n_cams > 5:
             chassis_config.camshaft_diameter = 6.0  # Ø6mm steel rod (5× less deflection)
             chassis_config.bearing_clearance = 0.30  # slightly more clearance for Ø6
             print(f"  ⚙ Auto-scale: Ø6mm shaft ({n_cams} cams > 5)")
