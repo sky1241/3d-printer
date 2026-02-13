@@ -1,5 +1,5 @@
 # 🗺️ CODEMAP v4 — automata_unified_v4.py (18615 lignes)
-# Dernière mise à jour: 13 février 2026 | Commit: e4adacf
+# Dernière mise à jour: 13 février 2026 | Commit: 77965ce
 # 17/17 espèces clean | 95 checks | 7 auto-scaling rules
 
 ---
@@ -385,6 +385,7 @@ PROBLÈME ?
 
 | Commit | Description | Impact |
 |--------|-------------|--------|
+| `77965ce` | Turtle presets (simple+walking) | 2 new presets, STL export ready |
 | `e4adacf` | Torque auto-upgrade | TORQUE_EXCEEDS 2→0 |
 | `d7053bd` | Lever sweep horizontal proj | LEVER_SWEEP 9→1 (blacksmith by design) |
 | `7cc2bd3` | Auto-clamp Rb ≥ Rb_min | RB_SMALL 10→0, ROLLER_BIG 5→0 |
