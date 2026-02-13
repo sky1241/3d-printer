@@ -9134,6 +9134,35 @@ class AutomataGenerator:
         if punch_count > 0:
             print(f"  · Pushrod holes: {punch_count} trous percés dans figurine")
 
+        # ── Repair degenerate faces from boolean operations ──
+        if fig_cfg is not None:
+            repair_count = 0
+            for k in list(self.all_parts):
+                if k.startswith('fig_') and not k.startswith('fig_pin_'):
+                    mesh = self.all_parts[k]
+                    if len(mesh.faces) > 0:
+                        good_mask = trimesh.triangles.nondegenerate(mesh.triangles)
+                        n_degen = len(mesh.faces) - good_mask.sum()
+                        if n_degen > 0:
+                            try:
+                                # Save original in case repair breaks watertight
+                                was_wt = mesh.is_watertight
+                                backup = mesh.copy()
+                                mesh.update_faces(good_mask)
+                                mesh.remove_unreferenced_vertices()
+                                mesh.fill_holes()
+                                mesh.fix_normals()
+                                if was_wt and not mesh.is_watertight:
+                                    # Revert — watertight is more important
+                                    self.all_parts[k] = backup
+                                else:
+                                    self.all_parts[k] = mesh
+                                    repair_count += 1
+                            except Exception:
+                                pass
+            if repair_count > 0:
+                print(f"  · Mesh repair: {repair_count} fig parts cleaned")
+
         # ── Annotate fixed vs mobile fig parts for assembly ──
         if fig_cfg is not None and art_count > 0:
             mobile_parts = set()
