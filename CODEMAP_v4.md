@@ -1,5 +1,5 @@
 # 🗺️ CODEMAP v4 — automata_unified_v4.py (18615 lignes)
-# Dernière mise à jour: 13 février 2026 | Commit: d7053bd
+# Dernière mise à jour: 13 février 2026 | Commit: e4adacf
 # 17/17 espèces clean | 95 checks | 7 auto-scaling rules
 
 ---
@@ -106,6 +106,7 @@ generate()
 | R5 | Chassis expand | guides don't fit | width auto-rounded to 5mm | L7850 | 13 fév |
 | R6 | Mid-bearing | shaft > 180mm & >5 cams | mid_bearing_wall added | L7870 | 13 fév |
 | R7 | Deflection /2 | mid-bearing present | span_mm = shaft/2, loads split | L3757 | 13 fév |
+| R8 | Motor torque-upgrade | peak_torque > available | 150→200→300 mNm stall | L16770 | 13 fév |
 
 ### Constantes révisées (research Feb 2026) :
 
@@ -384,6 +385,7 @@ PROBLÈME ?
 
 | Commit | Description | Impact |
 |--------|-------------|--------|
+| `e4adacf` | Torque auto-upgrade | TORQUE_EXCEEDS 2→0 |
 | `d7053bd` | Lever sweep horizontal proj | LEVER_SWEEP 9→1 (blacksmith by design) |
 | `7cc2bd3` | Auto-clamp Rb ≥ Rb_min | RB_SMALL 10→0, ROLLER_BIG 5→0 |
 | `4771f31` | Propagate phi_limit_deg | RB_SMALL 13→10 |
