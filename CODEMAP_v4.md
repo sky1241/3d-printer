@@ -1,5 +1,5 @@
 # 🗺️ CODEMAP v4 — automata_unified_v4.py (18615 lignes)
-# Dernière mise à jour: 13 février 2026 | Commit: 820c93d
+# Dernière mise à jour: 13 février 2026 | Commit: b2d5a46
 # 17/17 espèces clean | 95 checks | 7 auto-scaling rules
 
 ---
@@ -106,6 +106,17 @@ generate()
 | R5 | Chassis expand | guides don't fit | width auto-rounded to 5mm | L7850 | 13 fév |
 | R6 | Mid-bearing | shaft > 180mm & >5 cams | mid_bearing_wall added | L7870 | 13 fév |
 | R7 | Deflection /2 | mid-bearing present | span_mm = shaft/2, loads split | L3757 | 13 fév |
+
+### Constantes révisées (research Feb 2026) :
+
+| Constante | Avant | Après | Justification |
+|-----------|-------|-------|---------------|
+| PLA_HERTZ_MAX (dry) | 8 MPa | 15 MPa | Surface PLA = perimeters solid ~50 MPa, SF=3.3 |
+| PLA_HERTZ_MAX (lub) | 10 MPa | 20 MPa | Idem + lubrification |
+| PV_LIMIT (dry) | 0.05 | 0.10 | Toy <5 RPM, intermittent |
+| PV_LIMIT (lub) | 0.15 | 0.20 | Idem + lubrification |
+| BOM default | screws only | +power supply, +PTC 1A | Complétude |
+| has_fuse_or_ptc | False | True | PTC 1A dans BOM standard |
 
 ### Cascade d'auto-scaling (ordre d'exécution) :
 
@@ -373,6 +384,8 @@ PROBLÈME ?
 
 | Commit | Description | Impact |
 |--------|-------------|--------|
+| `b2d5a46` | Hertz/PV + BOM + PTC | HERTZ 16→0, BOM 9→0, FUSE 9→0 |
+| `d8ae7f6` | CODEMAP_v4 | — |
 | `820c93d` | Docs 17/17 | — |
 | `1326b94` | Motor auto-upgrade | 14→17/17 |
 | `b84ac1e` | Mid-bearing + print filter | 11→14/17 |
