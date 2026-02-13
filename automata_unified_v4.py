@@ -2112,6 +2112,10 @@ def generate_chassis_flat(config, cam_count=1, follower_guides=None):
 def generate_chassis_bom(config):
     if config.drive_mode == 'crank':
         return [
+            {"part": f"Steel rod Ø{config.camshaft_diameter}mm × {config.camshaft_length:.0f}mm",
+             "quantity": 1, "source": "Hardware store"},
+            {"part": "CA glue (cyanoacrylate)", "quantity": 1,
+             "source": "Pour fixer les pièces fixes au châssis"},
             {"part": "Super Lube 21030 (silicone grease)", "quantity": 1,
              "source": "Optionnel — améliore la fluidité"},
         ]
@@ -9032,7 +9036,8 @@ class AutomataGenerator:
                 "timing": self.timing_data, "motor": self.motor_check,
                 "validation": self.validation_results,
                 "assembly_violations": self.assembly_violations,
-                "constraint_violations": self.constraint_violations}
+                "constraint_violations": self.constraint_violations,
+                "bom": generate_chassis_bom(chassis_config)}
         self._last_result = result
         return result
 
