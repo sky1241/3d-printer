@@ -1163,10 +1163,39 @@ def auto_design_cam(
                     Rb_floor = max(Rb_floor_new, rf + 2, 5.0)
                     Rb = Rb_floor
                     continue
-                # Fallback 5: hard clamp — accept Rb_floor (best we can do)
-                Rb = max(Rb_floor, Rb)
+                # Fallback 5: hard clamp — Rb_max wins, accept phi/undercut trade-off
+                Rb = Rb_max if Rb_max is not None else max(Rb_floor, Rb)
                 break
             Rb = next_Rb
+
+        # Post-loop: enforce Rb_max even if initial Rb satisfied constraints
+        if Rb_max is not None and Rb > Rb_max:
+            # Iteratively reduce amplitude until Rb fits within Rb_max
+            # Use relaxed phi (58°) since we're space-constrained
+            phi_limit_post = np.radians(58.0)
+            lo, hi = 0.1, 1.0
+            best_scale = 0.5
+            for _ in range(15):  # binary search
+                mid = (lo + hi) / 2
+                s_try, v_try = s * mid, v * mid
+                Rb_try = compute_Rb_min_translating_roller(v_try, s_try, rf, phi_limit_post, eps)
+                Rb_try = max(Rb_try, rf + 2, 5.0)
+                if Rb_try <= Rb_max:
+                    best_scale = mid
+                    lo = mid
+                else:
+                    hi = mid
+            s = s * best_scale
+            v = v * best_scale
+            a = a * best_scale
+            Rb = compute_Rb_min_translating_roller(v, s, rf, phi_limit_post, eps)
+            Rb = max(Rb, rf + 2, 5.0)
+            Rb = min(Rb, Rb_max)
+            # Recompute curves
+            rho = curvature_radius_pitch_curve_roller(s, v, a, Rb, rf)
+            uc = check_undercut_roller(rho, rf, safety_factor=1.2)
+            phi = pressure_angle_translating_roller(s, v, Rb, rf, eps)
+            phi_max_actual = float(np.max(np.abs(phi)))
 
         x_p, y_p = pitch_curve_translating_roller(theta, s, Rb, rf, eps)
         x_cam, y_cam = cam_profile_translating_roller(theta, s, v, Rb, rf, eps)
@@ -7552,7 +7581,10 @@ class AutomataGenerator:
                                                                   np.radians(30.0), 0.0)
                 _rb_min_cam = max(_rb_min_cam, rf_est / 0.38, 5.0)
                 # Set Rb_max to accommodate Rb_min (no aggressive clamping)
-                Rb_max = max(R_available - max_amp - rf_est, _rb_min_cam)
+                # Hard cap: no cam should exceed 50mm Rb (100mm diameter + lift)
+                # Avoids 141mm monsters but keeps pressure angles reasonable
+                Rb_hard_cap = 50.0
+                Rb_max = min(max(R_available - max_amp - rf_est, _rb_min_cam), Rb_hard_cap)
 
                 # If amplitude alone exceeds available space, scale it down
                 # (lever mechanism implied — cam delivers reduced stroke, lever amplifies)
@@ -7568,7 +7600,7 @@ class AutomataGenerator:
                         v_arr = v_arr * amp_scale
                         a_arr = a_arr * amp_scale
                         max_amp = float(np.max(np.abs(s_arr)))
-                        Rb_max = max(R_available - max_amp - rf_est, min_Rb)
+                        Rb_max = min(max(R_available - max_amp - rf_est, min_Rb), Rb_hard_cap)
                         print(f"  ⚠ cam_{cam.name}: amplitude scaled ×{amp_scale:.2f} (lever ratio 1:{1/amp_scale:.1f} needed)")
 
                 # Adaptive roller radius: rf/Rb must be ≤ 0.4 to avoid undercut
