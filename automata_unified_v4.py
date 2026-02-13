@@ -5646,6 +5646,71 @@ def create_swimming_fish(style=MotionStyle.FLUID):
     return scene
 
 
+def create_turtle_simple(style=MotionStyle.FLUID):
+    """Tortue simple — tête hoche haut/bas. 1 came, le plus simple possible."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Simple Turtle", description="Tortue tête haut-bas",
+                          style=style, cycle_rpm=1.5)
+    # Corps = carapace ovale, tête petite
+    scene.links = [Link("shell", 55, 40, 25, 20), Link("head", 18, 12, 8, 5)]
+    scene.joints = [
+        Joint("neck", "revolute", (1,0,0), (0,25,18), "shell", "head", (-10, 15))]
+    scene.tracks = [MotionTrack("neck", primitives=[
+        MotionPrimitive("LIFT", 8, 120, law, 1), MotionPrimitive("PAUSE", beta=60),
+        MotionPrimitive("LIFT", 8, 120, law, -1), MotionPrimitive("PAUSE", beta=60)])]
+    scene._preset_name = "turtle_simple"
+    return scene
+
+
+def create_turtle_walking(style=MotionStyle.FLUID):
+    """Tortue complète — tête gauche-droite, 4 pattes marchent, queue haut-bas. 6 cames."""
+    law = STYLE_TO_LAW[style]
+    scene = AutomataScene(name="Walking Turtle", description="Tortue qui marche",
+                          style=style, cycle_rpm=1.0)
+    scene.motor_stall_torque_mNm = 380.0  # N20 380:1 — 6 cams at 58.5 mNm peak
+    # Carapace bombée, tête, 4 pattes, queue
+    scene.links = [
+        Link("shell", 65, 45, 30, 22),
+        Link("head", 18, 12, 8, 5),
+        Link("leg_fl", 15, 6, 5, 4),   # front left
+        Link("leg_fr", 15, 6, 5, 4),   # front right
+        Link("leg_rl", 15, 6, 5, 4),   # rear left
+        Link("leg_rr", 15, 6, 5, 4),   # rear right
+        Link("tail", 12, 5, 3, 2),
+    ]
+    scene.joints = [
+        # Tête tourne gauche-droite (axe Z = vertical → rotation horizontale)
+        Joint("neck", "revolute", (0,0,1), (0,30,15), "shell", "head", (-10, 10)),
+        # 4 pattes — avant-arrière (slide)
+        Joint("hip_fl", "revolute", (1,0,0), (-15,18,0), "shell", "leg_fl", (-8, 8)),
+        Joint("hip_fr", "revolute", (1,0,0), (15,18,0), "shell", "leg_fr", (-8, 8)),
+        Joint("hip_rl", "revolute", (1,0,0), (-15,-15,0), "shell", "leg_rl", (-8, 8)),
+        Joint("hip_rr", "revolute", (1,0,0), (15,-15,0), "shell", "leg_rr", (-8, 8)),
+        # Queue haut-bas
+        Joint("tail_joint", "revolute", (1,0,0), (0,-25,10), "shell", "tail", (-8, 8)),
+    ]
+    scene.tracks = [
+        # Tête: gauche-droite, lent
+        MotionTrack("neck", primitives=[
+            MotionPrimitive("WAVE", 8, 360, law)]),
+        # Pattes diagonales opposées en phase (trot de tortue)
+        # FL + RR ensemble (phase 0°), FR + RL ensemble (phase 180°)
+        MotionTrack("hip_fl", phase_offset_deg=0, primitives=[
+            MotionPrimitive("WAVE", 5, 360, law)]),
+        MotionTrack("hip_fr", phase_offset_deg=180, primitives=[
+            MotionPrimitive("WAVE", 5, 360, law)]),
+        MotionTrack("hip_rl", phase_offset_deg=180, primitives=[
+            MotionPrimitive("WAVE", 5, 360, law)]),
+        MotionTrack("hip_rr", phase_offset_deg=0, primitives=[
+            MotionPrimitive("WAVE", 5, 360, law)]),
+        # Queue: haut-bas, déphasée
+        MotionTrack("tail_joint", phase_offset_deg=90, primitives=[
+            MotionPrimitive("WAVE", 5, 360, law)]),
+    ]
+    scene._preset_name = "turtle_walking"
+    return scene
+
+
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  BRIQUE C — Mouvements V2-V10 (macros + templates)              ║
 # ╚══════════════════════════════════════════════════════════════════╝
@@ -8568,7 +8633,7 @@ class AutomataGenerator:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Automata Generator v4.0")
-    parser.add_argument("--preset", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
+    parser.add_argument("--preset", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish", "turtle_simple", "turtle_walking", "turtle"],
                         default="nodding_bird")
     parser.add_argument("--style", choices=["fluid", "mechanical", "snappy"], default="mechanical")
     parser.add_argument("--seed", type=int, default=42)
@@ -17057,6 +17122,8 @@ def validate_preset(preset_name: str = 'nodding_bird', verbose: bool = True) -> 
         'drummer': create_drummer,
         'blacksmith': create_blacksmith,
         'swimming_fish': create_swimming_fish,
+        'turtle_simple': create_turtle_simple,
+        'turtle_walking': create_turtle_walking,
         'slider': create_slide_scene,
         'rocker': create_rotate_scene,
         'turntable': create_geneva_scene,
@@ -17069,6 +17136,7 @@ def validate_preset(preset_name: str = 'nodding_bird', verbose: bool = True) -> 
         'chicken': create_pecking_chicken,
         'cat': create_waving_cat,
         'fish': create_swimming_fish,
+        'turtle': create_turtle_simple,
     }
     if preset_name not in creators:
         raise ValueError(f"Unknown preset: {preset_name}. Choose from {list(creators.keys())}")
@@ -17480,6 +17548,8 @@ def auto_fix_preset(
         'drummer': create_drummer,
         'blacksmith': create_blacksmith,
         'swimming_fish': create_swimming_fish,
+        'turtle_simple': create_turtle_simple,
+        'turtle_walking': create_turtle_walking,
         'slider': create_slide_scene,
         'rocker': create_rotate_scene,
         'turntable': create_geneva_scene,
@@ -17492,6 +17562,7 @@ def auto_fix_preset(
         'chicken': create_pecking_chicken,
         'cat': create_waving_cat,
         'fish': create_swimming_fish,
+        'turtle': create_turtle_simple,
     }
     if preset_name not in creators:
         raise ValueError(f"Unknown preset: {preset_name}")
@@ -18583,13 +18654,13 @@ Examples:
     parser.add_argument("--test", action="store_true", help="Run master test suite")
     parser.add_argument("--web", action="store_true", help="Run offline Flask UI (localhost)")
     parser.add_argument("--text", type=str, default=None, help="Generate from free text prompt (offline)")
-    parser.add_argument("--generate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
+    parser.add_argument("--generate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish", "turtle_simple", "turtle_walking", "turtle"],
                         help="Generate a preset automata")
-    parser.add_argument("--validate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
+    parser.add_argument("--validate", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish", "turtle_simple", "turtle_walking", "turtle"],
                         help="Generate + validate against constraints")
-    parser.add_argument("--diagnose", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
+    parser.add_argument("--diagnose", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish", "turtle_simple", "turtle_walking", "turtle"],
                         help="Full diagnostic with debug tree")
-    parser.add_argument("--fix", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish"],
+    parser.add_argument("--fix", choices=["nodding_bird", "flapping_bird", "walking_figure", "bobbing_duck", "rocking_horse", "pecking_chicken", "waving_cat", "drummer", "blacksmith", "swimming_fish", "slider", "rocker", "turntable", "sequence", "striker", "holder", "multi_axis", "duck", "horse", "chicken", "cat", "fish", "turtle_simple", "turtle_walking", "turtle"],
                         help="Auto-fix: generate + validate + correct errors iteratively")
     parser.add_argument("--style", choices=["fluid", "mechanical", "snappy"], default="fluid")
     parser.add_argument("--seed", type=int, default=42)
