@@ -1116,7 +1116,7 @@ def auto_design_cam(
     if follower_type == "roller":
         if Rb_hint is None:
             Rb = compute_Rb_min_translating_roller(v, s, rf, phi_max_rad, eps)
-            Rb = max(Rb, rf + 2, 5.0)  # min 5mm for FDM
+            Rb = max(Rb, rf + 2, rf / 0.35, 5.0)  # min 5mm FDM + roller ratio ≤ 0.35
         else:
             Rb = Rb_hint
         # CRITICAL: Never go below this floor — constraint engine checks strict phi_max
@@ -7603,10 +7603,11 @@ class AutomataGenerator:
                         Rb_max = min(max(R_available - max_amp - rf_est, min_Rb), Rb_hard_cap)
                         print(f"  ⚠ cam_{cam.name}: amplitude scaled ×{amp_scale:.2f} (lever ratio 1:{1/amp_scale:.1f} needed)")
 
-                # Adaptive roller radius: rf/Rb must be ≤ 0.4 to avoid undercut
-                rf = 3.0
-                if Rb_max < rf / 0.38:
-                    rf = max(round(0.38 * Rb_max, 1), 2.0)  # min 2mm for FDM printability
+                # Adaptive roller radius: rf/Rb must be ≤ 0.35 to avoid undercut
+                rf = 2.0  # FDM minimum printable roller
+                if Rb_max >= 8.0:
+                    rf = min(round(0.30 * Rb_max, 1), 3.0)  # target 0.30 ratio, cap at 3mm
+                    rf = max(rf, 2.0)  # FDM floor
 
                 design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
                                           follower_type="roller", rf=rf,
@@ -7614,9 +7615,9 @@ class AutomataGenerator:
                                           phi_max_deg=30.0, thickness=cam_thickness, bore_diameter=4.0,
                                           Rb_max=Rb_max)
 
-                # Post-check: if actual Rb makes rf/Rb > 0.4, redo with smaller rf
-                if design.Rb > 0 and rf / design.Rb > 0.4:
-                    rf_new = max(round(0.38 * design.Rb, 1), 2.0)
+                # Post-check: if actual Rb makes rf/Rb > 0.35, redo with smaller rf
+                if design.Rb > 0 and rf / design.Rb > 0.35:
+                    rf_new = max(round(0.30 * design.Rb, 1), 2.0)
                     if rf_new < rf:
                         rf = rf_new
                         design = auto_design_cam(theta_rad, s_arr, v_arr, a_arr,
