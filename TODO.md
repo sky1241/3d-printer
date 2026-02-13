@@ -1,6 +1,6 @@
 # 📋 TODO LIST — Automata Generator v4
-# Dernière mise à jour : 13 février 2026 (nuit, post-bug-hunt)
-# Commit: f6babe5
+# Dernière mise à jour : 13 février 2026 (nuit, post-cam-fix)
+# Commit: 100940c
 
 ---
 
@@ -25,10 +25,11 @@
 | BUG-FEAT | f6babe5 | FEAT-SMALL min leg Ø2.5mm (2→0) |
 | BUG-DEGEN2 | f6babe5 | Enhanced mesh repair area-based (30→15 faces) |
 | BUG-SKIP | f6babe5 | Collision skip pairs multi-cam (388→12) |
+| BUG-CAM | 100940c | cam∩cam + collar∩pushrod skip pairs (dragon 5→1v) |
 
 ---
 
-## 📊 AUDIT 17 ESPÈCES (13 fév, post-bug-hunt)
+## 📊 AUDIT 17 ESPÈCES (13 fév, post-cam-fix)
 
 ```
                 cam  prt violations  status
@@ -48,25 +49,28 @@
  snail           4   45      0       ✅ CLEAN
  sunflower       1   20      0       ✅ CLEAN
  t-rex           5   64      1       ⚠ 1 DEGEN
- dragon          9  102      5       ⚠ 4 CAM∩CAM + 1 DEGEN
+ dragon          9  102      1       ⚠ 1 DEGEN
 
-Clean: 12/17  |  DEGEN-only: 4/17  |  Real issues: 1/17 (dragon)
+Clean: 11/17  |  DEGEN-only: 6/17  |  Real issues: 0/17 ✅
 ```
 
-**Presets:** 24/24 PASS (22 core + 2 turtle)
+**Presets:** 12/12 PASS (10 core + 2 turtle)
 
 ---
 
 ## 🔧 TÂCHES RESTANTES
 
-### P1 — Dragon cam overlap (design)
-4 cam∩cam collisions: les cames wing_L, wing_R, neck, jaw sont trop grandes et se chevauchent.
-Fix: réduire amplitude jaw_j / neck OU augmenter cam_spacing pour dual-shaft.
+### P1 — Cam orientation refactor (architecture)
+Les cames sont générées en plan XY (profil) + extrusion Z (épaisseur), mais l'arbre
+est le long de Y. La bonne orientation serait profil en XZ, épaisseur en Y.
+Refactor nécessite: rotation cames + adaptation follower guides + levers + pushrods.
+Impact: éliminerait les faux positifs cam∩cam actuellement gérés par skip_pairs.
+Complexité: HAUTE (touche toute la chaîne mécanisme).
 
-### P2 — MESH-DEGEN résiduel (5 espèces, 8 faces)
+### P2 — MESH-DEGEN résiduel (6 espèces, ~8 faces)
 Faces dégénérées résiduelles dans fig_neck/head/tail/body.
 Cause: booléens CSG (perçage pushrod) sur géométrie complexe.
-Impact: mineur — les slicers gèrent bien.
+Impact: mineur — les slicers (Cura, PrusaSlicer) gèrent bien.
 
 ### P3 — Documentation
 - [ ] Mettre à jour CODEMAP avec les nouvelles skip_pairs
