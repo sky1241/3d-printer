@@ -340,16 +340,27 @@ def constraint_shaft_deflection(x, n_cams, cam_forces_N):
 
 
 def constraint_pressure_angle(x, cam_idx, v_arr, s_arr, rf):
-    """g(x) = φ_limit - φ_max(Rb) >= 0"""
+    """g(x) = Rb - Rb_needed >= 0
+    Uses cascade: try phi=30°, if Rb would exceed cap try 45°, then 58°."""
     n_g = 8  # global vars
     Rb = x[n_g + cam_idx]  # cam_Rb[cam_idx]
 
-    tan_phi = np.tan(np.radians(PRESSURE_ANGLE_IDEAL))
-    Rp_required = np.abs(v_arr) / tan_phi - s_arr
-    Rp_min = float(np.max(Rp_required))
-    Rb_needed = max(Rp_min - rf, rf)
+    # Cascade through pressure angle limits
+    for phi_deg in PRESSURE_ANGLE_CASCADE:
+        tan_phi = np.tan(np.radians(phi_deg))
+        # Avoid division issues with zero velocity points
+        mask = np.abs(v_arr) > 1e-9
+        if not np.any(mask):
+            return Rb  # no velocity → any Rb is fine
+        Rp_required = np.abs(v_arr[mask]) / tan_phi - s_arr[mask]
+        Rp_min = float(np.max(Rp_required))
+        Rb_needed = max(Rp_min - rf, rf)
 
-    return Rb - Rb_needed  # >= 0 means Rb is big enough
+        if Rb_needed <= RB_HARD_CAP:
+            return Rb - Rb_needed  # >= 0 means Rb is big enough
+
+    # Even at 58° it needs more than cap — return deficit
+    return Rb - Rb_needed
 
 
 def constraint_cam_fits_chassis(x, cam_idx, max_amp, rf, n_cams):
@@ -709,7 +720,11 @@ class MICR:
         mech_w = 2 * (max_cam_outer + dv.wall_thickness + 2.0)
         dv.chassis_width = max(round(max(fig_w + 20, mech_w, 60) / 5) * 5, 60)
         dv.chassis_depth = max(round(max(fig_d + 20, 60) / 5) * 5, 60)
-        dv.chassis_height = max(round(max(max_cam_outer * 2 + 20, 70) / 5) * 5, 70)
+        # Height: enough for shaft + biggest cam + lever + margin to figurine
+        est_lever = max_cam_outer * 1.5
+        min_height = max_cam_outer * 2 + est_lever + 20
+        dv.chassis_height = max(round(max(min_height, 80) / 5) * 5, 80)
+        dv.fig_mount_z_offset = 5.0  # 5mm default lift above shelf
 
         # Per-cam: estimate Rb from cam profiles
         dv.cam_Rb = []
@@ -722,17 +737,25 @@ class MICR:
             prof = self._cam_profiles[i]
             rf = 3.0  # default roller
 
-            # Rb_min for phi=30°
-            try:
-                from automata_unified_v4 import compute_Rb_min_translating_roller
-                Rb_min = compute_Rb_min_translating_roller(
-                    prof['ds'], prof['s'], rf, np.radians(30.0), 0.0)
-            except ImportError:
-                # Standalone mode: estimate Rb_min
-                v_max = float(np.max(np.abs(prof['ds'])))
-                Rb_min = max(v_max / np.tan(np.radians(30.0)) + rf, rf / 0.38, 5.0)
+            # Rb_min with pressure angle cascade (30° → 45° → 58°)
+            Rb_min = None
+            for phi_deg in PRESSURE_ANGLE_CASCADE:
+                try:
+                    from automata_unified_v4 import compute_Rb_min_translating_roller
+                    Rb_cand = compute_Rb_min_translating_roller(
+                        prof['ds'], prof['s'], rf, np.radians(phi_deg), 0.0)
+                except ImportError:
+                    v_max = float(np.max(np.abs(prof['ds'])))
+                    Rb_cand = max(v_max / np.tan(np.radians(phi_deg)) + rf, rf / 0.38, 5.0)
 
-            Rb_min = max(Rb_min, rf / 0.38, 5.0)
+                Rb_cand = max(Rb_cand, rf / 0.34, 5.0)  # rf/Rb <= 0.35 → Rb >= rf/0.35
+                if Rb_cand <= RB_HARD_CAP:
+                    Rb_min = Rb_cand
+                    break
+
+            if Rb_min is None:
+                Rb_min = RB_HARD_CAP  # best we can do
+
             Rb_min = min(Rb_min, RB_HARD_CAP)
 
             dv.cam_Rb.append(Rb_min)
@@ -812,7 +835,7 @@ class MICR:
                 results.append(g)
                 labels.append(f'adjacent_clearance_{i}_{j}')
 
-        # 5. Figurine space — pushrod must not go through figurine body
+        # 5. Figurine space — lever tip + pushrod must not enter figurine zone
         chassis_h = dv_array[4]
         shelf_z = chassis_h + 3.0  # shelf thickness = 3mm
         fig_z_base = shelf_z + dv_array[7]  # fig_mount_z_offset
@@ -821,6 +844,7 @@ class MICR:
         fig_world_max = fig_max + np.array([0, 0, fig_z_base])
 
         shaft_z = chassis_h * 0.5
+        FIGURINE_BUFFER = 2.0  # 2mm safety buffer
         for i in range(n_cams):
             n_g = 8
             Rb = dv_array[n_g + i]
@@ -829,16 +853,17 @@ class MICR:
             # Lever tip Z ≈ shaft_z + Rb + lever_total
             lever_top_z = shaft_z + Rb + 5 + lever_len
 
-            # Check: lever tip must be below figurine bottom OR outside its XY footprint
-            if lever_top_z > fig_world_min[2]:
-                # Lever reaches into figurine zone — check horizontal clearance
-                fx = dv_array[n_g + 3*n_cams + i]
-                # Is follower_x outside figurine X range?
-                fig_x_margin = fig_world_max[0] + PUSHROD_CLEARANCE
-                g = abs(fx) - fig_x_margin
-                results.append(max(g, fig_world_min[2] - lever_top_z))
-            else:
-                results.append(lever_top_z - fig_world_min[2])  # positive = below fig = OK
+            # Option A: lever stays below figurine zone
+            clearance_below = (fig_world_min[2] - FIGURINE_BUFFER) - lever_top_z
+
+            # Option B: lever exits through side (outside figurine XY)
+            fx = dv_array[n_g + 3*n_cams + i]
+            fig_x_margin = fig_world_max[0] + PUSHROD_CLEARANCE + FIGURINE_BUFFER
+            clearance_side = abs(fx) - fig_x_margin
+
+            # Satisfied if EITHER condition holds (smooth max)
+            g = max(clearance_below, clearance_side)
+            results.append(g)
             labels.append(f'lever_vs_figurine_{i}')
 
         return results, labels
@@ -904,11 +929,12 @@ class MICR:
         bounds = dv.bounds(self.n_cams)
 
         if self.verbose:
+            CTOL = 1e-3
             vals0, labels0 = self._build_constraints(x0, self.n_cams)
-            n_ok = sum(1 for v in vals0 if v >= 0)
+            n_ok = sum(1 for v in vals0 if v >= -CTOL)
             print(f"  Warm-start: {n_ok}/{len(vals0)} constraints OK")
             for v, l in zip(vals0, labels0):
-                if v < 0:
+                if v < -CTOL:
                     print(f"    ✗ {l}: g={v:.3f}")
 
         # ── PHASE 1: Fixed-point iteration ──
@@ -951,9 +977,10 @@ class MICR:
                     print(f"    ⚠ Solver error: {e}")
                 break
 
-            # Check convergence
+            # Check convergence — tolerance 1e-3 for floating-point boundary
+            CTOL = 1e-3
             vals, labels = self._build_constraints(best_x, self.n_cams)
-            n_violations = sum(1 for v in vals if v < 0)
+            n_violations = sum(1 for v in vals if v < -CTOL)
 
             if self.verbose:
                 n_ok = len(vals) - n_violations
@@ -1008,14 +1035,15 @@ class MICR:
                       f"{'OK' if route.clearance_ok else 'COLLISION'})")
 
         # ── BUILD RESULT ──
+        CTOL = 1e-3  # constraint satisfaction tolerance
         solve_time = time.time() - t0
         vals_final, labels_final = self._build_constraints(best_x, self.n_cams)
         violations = []
         for v, l in zip(vals_final, labels_final):
-            if v < 0:
+            if v < -CTOL:
                 violations.append(f"{l}: g={v:.3f}")
 
-        n_satisfied = sum(1 for v in vals_final if v >= 0)
+        n_satisfied = sum(1 for v in vals_final if v >= -CTOL)
 
         result = MICRResult(
             success=(len(violations) == 0),
